@@ -43,11 +43,10 @@ as described in the [README](../README.md#troubleshooting).
 ## Runtime
 
 `__init__.py` registers the tools and bundled skill without importing the SDK or
-starting a subprocess. `tools.py` invokes **fulcra-api==0.1.42** through uvx,
-falling back to `uv tool run`:
+starting a subprocess. `tools.py` invokes **fulcra-api==0.1.42** through `uv tool run`:
 
 ```bash
-uvx --isolated --no-config --from fulcra-api==0.1.42 fulcra-api catalog
+uv tool run --isolated --no-config --from fulcra-api==0.1.42 fulcra-api catalog
 ```
 
 uv creates and caches the external environment. It may download a compatible

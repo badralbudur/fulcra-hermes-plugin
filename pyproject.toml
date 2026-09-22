@@ -2,5 +2,5 @@
 name = "fulcra-hermes-plugin"
 version = "1.0.0"
 requires-python = ">=3.11"
-# The host adapter uses only the standard library; uvx owns the Fulcra runtime.
+# The host adapter uses only the standard library; uv owns the Fulcra runtime.
 dependencies = []

@@ -1,6 +1,7 @@
 """Native Hermes tools backed by an isolated, pinned Fulcra CLI."""
 
 import json
+import os
 import shutil
 import subprocess
 
@@ -22,17 +23,22 @@ def _run_cli(arguments, *, timeout=180):
     """Execute only plugin-selected CLI operations outside Hermes's Python environment."""
     allowed, env = _runtime_context()
     if not allowed:
-        raise RuntimeError("Fulcra's uvx runtime requires security.allow_lazy_installs; it is disabled.")
+        raise RuntimeError("Fulcra's uv runtime requires security.allow_lazy_installs; it is disabled.")
     # Ignore ambient Python/uv overrides: only this pinned package belongs in the child.
     env = {key: value for key, value in env.items()
            if not key.startswith(("UV_", "PYTHON")) and key not in {"VIRTUAL_ENV", "CONDA_PREFIX"}}
     env["PYTHONIOENCODING"] = "utf-8"
-    uvx = shutil.which("uvx", path=env.get("PATH", ""))
-    uv = None if uvx else shutil.which("uv", path=env.get("PATH", ""))
-    if not uvx and not uv:
-        raise RuntimeError("Install uv and put uvx or uv on the Hermes host's PATH, then retry.")
-    launcher = [uvx] if uvx else [uv, "tool", "run"]
-    command = [*launcher, "--isolated", "--no-config", "--from", FULCRA_PACKAGE, "fulcra-api", *arguments]
+    from hermes_cli.managed_uv import managed_uv_path
+
+    # Extend only the child PATH; direct subprocesses do not load shell setup.
+    managed_bin = str(managed_uv_path().parent)
+    path = env.get("PATH", "")
+    if managed_bin not in path.split(os.pathsep):
+        env["PATH"] = path + os.pathsep + managed_bin if path else managed_bin
+    uv = shutil.which("uv", path=env.get("PATH", ""))
+    if not uv:
+        raise RuntimeError("Install uv and put it on the Hermes host's PATH, then retry.")
+    command = [uv, "tool", "run", "--isolated", "--no-config", "--from", FULCRA_PACKAGE, "fulcra-api", *arguments]
     try:
         result = subprocess.run(
             command, env=env, stdin=subprocess.DEVNULL, capture_output=True,
