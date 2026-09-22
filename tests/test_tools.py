@@ -37,19 +37,20 @@ class AdapterTests(unittest.TestCase):
         tools = load_tools()
         result = subprocess.CompletedProcess([], 0, '[{"id":"fixture"}]\n', '')
         with patch.object(tools, "_runtime_context", create=True, return_value=(True, {"PATH": "/bin"})), \
-             patch("shutil.which", side_effect=lambda name, **kw: "/bin/uvx" if name == "uvx" else None), \
+             patch("shutil.which", return_value="/bin/uv") as which, \
              patch("subprocess.run", return_value=result) as run:
             self.assertEqual(json.loads(tools.fulcra_get_data_catalog({})), json.loads(result.stdout))
+        which.assert_called_once_with("uv", path=os.pathsep.join(("/bin", str(self.managed_bin))))
         command = run.call_args.args[0]
-        self.assertEqual(command, ["/bin/uvx", "--isolated", "--no-config", "--from", "fulcra-api==0.1.42", "fulcra-api", "catalog"])
+        self.assertEqual(command, ["/bin/uv", "tool", "run", "--isolated", "--no-config", "--from", "fulcra-api==0.1.42", "fulcra-api", "catalog"])
         self.assertFalse(run.call_args.kwargs.get("shell", False))
         self.assertGreater(run.call_args.kwargs["timeout"], 0)
 
-    def test_managed_uvx_is_found_outside_path(self):
+    def test_managed_uv_is_found_outside_path(self):
         managed_bin = self.managed_bin
-        uvx = managed_bin / ("uvx.exe" if os.name == "nt" else "uvx")
-        uvx.touch()
-        uvx.chmod(0o755)  # Discovery fixture only; subprocess execution is mocked.
+        uv = managed_bin / ("uv.exe" if os.name == "nt" else "uv")
+        uv.touch()
+        uv.chmod(0o755)  # Discovery fixture only; subprocess execution is mocked.
         tools = load_tools()
         parent_path = os.environ.get("PATH")
         for path in ("", str(managed_bin.parent / "absent"), str(managed_bin)):
@@ -58,7 +59,7 @@ class AdapterTests(unittest.TestCase):
                  patch.object(tools, "_runtime_context", return_value=(True, env)), \
                  patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, "[]", "")) as run:
                 self.assertEqual(tools._run_cli(["catalog"]), "[]")
-            self.assertEqual(run.call_args.args[0][0], str(uvx))
+            self.assertEqual(run.call_args.args[0][0], str(uv))
             child_path = run.call_args.kwargs["env"]["PATH"]
             expected = path if path == str(managed_bin) else os.pathsep.join(filter(None, (path, str(managed_bin))))
             self.assertEqual(child_path, expected)
@@ -91,7 +92,7 @@ class AdapterTests(unittest.TestCase):
                 self.assertTrue(tools.fulcra_submit_device_code({"device_code": value}).startswith("Error:"))
                 run.assert_not_called()
 
-    def test_uv_fallback_and_environment_isolation(self):
+    def test_uv_environment_isolation(self):
         tools = load_tools()
         env = {"PATH": "/bin", "HOME": "/home/fixture", "VIRTUAL_ENV": "/hermes/venv",
                "PYTHONPATH": "/hermes", "UV_PROJECT_ENVIRONMENT": "/hermes/venv", "UV_FROM": "untrusted"}
@@ -124,9 +125,9 @@ class AdapterTests(unittest.TestCase):
 
     def test_timeout_does_not_leak_command_or_partial_output(self):
         tools = load_tools()
-        error = subprocess.TimeoutExpired(["uvx", "sensitive-command"], 1, output="sensitive-output")
+        error = subprocess.TimeoutExpired(["uv", "sensitive-command"], 1, output="sensitive-output")
         with patch.object(tools, "_runtime_context", return_value=(True, {"PATH": "/bin"})), \
-             patch("shutil.which", return_value="/bin/uvx"), patch("subprocess.run", side_effect=error):
+             patch("shutil.which", return_value="/bin/uv"), patch("subprocess.run", side_effect=error):
             output = tools.fulcra_get_data_catalog({})
         self.assertIn("timed out", output)
         self.assertNotIn("sensitive", output)
@@ -135,7 +136,7 @@ class AdapterTests(unittest.TestCase):
         tools = load_tools()
         result = subprocess.CompletedProcess([], 1, "", "fixture-device " + "x" * 5000)
         with patch.object(tools, "_runtime_context", return_value=(True, {"PATH": "/bin"})), \
-             patch("shutil.which", return_value="/bin/uvx"), patch("subprocess.run", return_value=result):
+             patch("shutil.which", return_value="/bin/uv"), patch("subprocess.run", return_value=result):
             output = tools.fulcra_submit_device_code({"device_code": "fixture-device"})
         self.assertIn("[redacted]", output)
         self.assertLess(len(output), 2500)
@@ -144,7 +145,7 @@ class AdapterTests(unittest.TestCase):
     def test_empty_success_is_an_error(self):
         tools = load_tools()
         with patch.object(tools, "_runtime_context", return_value=(True, {"PATH": "/bin"})), \
-             patch("shutil.which", return_value="/bin/uvx"), \
+             patch("shutil.which", return_value="/bin/uv"), \
              patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, "", "")):
             self.assertIn("empty response", tools.fulcra_get_auth_url({}))
 
@@ -162,7 +163,7 @@ class AdapterTests(unittest.TestCase):
         ):
             with self.subTest(raw=raw), \
                  patch.object(tools, "_runtime_context", return_value=(True, {"PATH": "/bin"})), \
-                 patch("shutil.which", return_value="/bin/uvx"), \
+                 patch("shutil.which", return_value="/bin/uv"), \
                  patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, raw, "")):
                 self.assertEqual(tools.fulcra_get_data_catalog({}), json.dumps(expected, indent=2))
 

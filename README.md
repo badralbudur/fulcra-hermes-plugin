@@ -9,7 +9,7 @@ Fulcra account. It includes native Hermes tools and a usage skill.
 You need a current Hermes installation and [uv](https://docs.astral.sh/uv/getting-started/installation/)
 on the machine running it. The plugin appends Hermes's managed bin directory
 (`$HERMES_HOME/bin`, obtained through Hermes's managed-runtime helper) to the
-subprocess PATH if missing, then looks for `uvx` or `uv`. The parent process PATH
+subprocess PATH if missing, then runs the CLI with `uv tool run`. The parent process PATH
 is unchanged; no shell configuration changes are needed.
 
 ```bash
