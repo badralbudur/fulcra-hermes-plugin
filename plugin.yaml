@@ -2,6 +2,7 @@ name: context
 version: 1.0.0
 manifest_version: 2
 api_version: 1
+python_runtime: external
 description: Fulcra Context tools and resources for Hermes Agent.
 author:
   name: Fulcra Dynamics
