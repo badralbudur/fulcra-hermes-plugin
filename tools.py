@@ -4,7 +4,7 @@ import json
 import logging
 import datetime
 from fulcra_api.core import FulcraAPI
-from fulcra_api.cli.auth import save_creds
+from fulcra_api.cli.utils import load_creds, save_creds
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ def fulcra_submit_device_code(args, **kwargs):
 def fulcra_get_data_catalog(args, **kwargs):
     """Return a list of queryable Fulcra data types and metadata."""
     try:
-        fulcra_api = FulcraAPI()
+        fulcra_api = FulcraAPI(credentials=load_creds(), refresh_callback=save_creds)
         # fulcra_api.v1_catalog() retrieves the catalog natively
         response = fulcra_api.v1_catalog()
         return json.dumps(response, indent=2)
