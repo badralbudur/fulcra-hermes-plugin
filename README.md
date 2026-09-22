@@ -7,7 +7,10 @@ Fulcra account. It includes native Hermes tools and a usage skill.
 ## Install
 
 You need a current Hermes installation and [uv](https://docs.astral.sh/uv/getting-started/installation/)
-on the machine running it. Either `uvx` or `uv` must be on Hermes's PATH.
+on the machine running it. The plugin appends Hermes's managed bin directory
+(`$HERMES_HOME/bin`, obtained through Hermes's managed-runtime helper) to the
+subprocess PATH if missing, then looks for `uvx` or `uv`. The parent process PATH
+is unchanged; no shell configuration changes are needed.
 
 ```bash
 hermes plugins install fulcradynamics/fulcra-hermes-plugin --no-enable

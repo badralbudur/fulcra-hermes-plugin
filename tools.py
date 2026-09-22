@@ -1,6 +1,7 @@
 """Native Hermes tools backed by an isolated, pinned Fulcra CLI."""
 
 import json
+import os
 import shutil
 import subprocess
 
@@ -27,6 +28,13 @@ def _run_cli(arguments, *, timeout=180):
     env = {key: value for key, value in env.items()
            if not key.startswith(("UV_", "PYTHON")) and key not in {"VIRTUAL_ENV", "CONDA_PREFIX"}}
     env["PYTHONIOENCODING"] = "utf-8"
+    from hermes_cli.managed_uv import managed_uv_path
+
+    # Extend only the child PATH; direct subprocesses do not load shell setup.
+    managed_bin = str(managed_uv_path().parent)
+    path = env.get("PATH", "")
+    if managed_bin not in path.split(os.pathsep):
+        env["PATH"] = path + os.pathsep + managed_bin if path else managed_bin
     uvx = shutil.which("uvx", path=env.get("PATH", ""))
     uv = None if uvx else shutil.which("uv", path=env.get("PATH", ""))
     if not uvx and not uv:
