@@ -1,8 +1,12 @@
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
   "mcpServers": {
     "context": {
-      "url": "https://mcp.fulcradynamics.com/mcp",
-      "transport": "streamable-http"
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "fulcra-context-mcp@latest"
+      ]
     }
   }
 }
