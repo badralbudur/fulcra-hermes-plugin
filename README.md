@@ -1,8 +1,6 @@
 # Fulcra Hermes Plugin
 
-This is a [Portable Agent Plugins v1.0.0](https://agent-plugins.org/) wrapper for the [Fulcra Context MCP Server](https://github.com/fulcradynamics/fulcra-context-mcp).
-
-It allows [Hermes Agent](https://github.com/NousResearch/hermes-agent) to seamlessly connect to your Fulcra data by automatically launching the MCP server as a local subprocess.
+This is a Native Python Plugin for [Hermes Agent](https://github.com/NousResearch/hermes-agent) that seamlessly connects to your Fulcra data.
 
 ## Installation
 
@@ -13,22 +11,17 @@ hermes plugins install fulcradynamics/fulcra-hermes-plugin --no-enable
 hermes plugins enable context
 ```
 
-## Requirements & Authentication
+Hermes will automatically install the `fulcra-api` package into its isolated environment.
 
-1. **uv**: This plugin uses `uvx` to launch the MCP server. You must have [uv](https://github.com/astral-sh/uv) installed on your system.
-2. **Authentication**: Before Hermes can access your data, you must authenticate your machine with Fulcra. You do not need to install anything globally. Simply run the interactive CLI login using `uvx`:
+## Authentication
 
-```bash
-uvx --from fulcra-api fulcra auth login
-```
+Authentication is handled completely seamlessly within the chat!
 
-Follow the link provided in your terminal to securely authorize access in your browser. This will cache your OAuth credentials (including a refresh token) locally, which the MCP server will automatically detect and use when Hermes launches it!
+If you haven't authenticated yet, simply ask Hermes to check your Fulcra data. Hermes will intelligently realize it needs to authenticate, provide you with an authorization link to open in your browser, and finalize the login process automatically once you approve it.
 
 ## How it works
 
-This repository contains:
-1. `plugin.json`: Metadata identifying this as a portable Hermes plugin.
-2. `mcp.json`: Configuration telling Hermes to launch `uvx fulcra-context-mcp@latest`.
-3. `skills/context/SKILL.md`: Guidance prompts teaching Hermes how to correctly utilize the Fulcra Context tools.
-
-Since the core logic lives in the `fulcra-context-mcp` package, this plugin remains lightweight and automatically benefits from upstream improvements to the MCP server.
+This repository contains a native Hermes Python plugin that interacts with the `fulcra-api` CLI:
+1. `plugin.yaml`: Manifest identifying this as a Hermes Native Python plugin and declaring the `fulcra-api` dependency.
+2. `__init__.py` & `tools.py`: Exposes tools for two-step interactive authentication and retrieving the data catalog.
+3. `skills/context/SKILL.md`: Guidance prompts teaching Hermes how to orchestrate the tools to authenticate users and query data.

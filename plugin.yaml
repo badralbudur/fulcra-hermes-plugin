@@ -1,0 +1,18 @@
+name: context
+version: 1.0.0
+manifest_version: 2
+api_version: 1
+description: Fulcra Context tools and resources for Hermes Agent.
+author:
+  name: Fulcra Dynamics
+  email: support@fulcradynamics.com
+  url: https://fulcradynamics.com
+homepage: https://github.com/fulcradynamics/fulcra-hermes-plugin
+repository: https://github.com/fulcradynamics/fulcra-hermes-plugin
+license: MIT
+keywords:
+  - context
+  - health
+  - data
+  - coordination
+  - loop
