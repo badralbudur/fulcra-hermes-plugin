@@ -1,7 +1,0 @@
-[project]
-name = "fulcra-hermes-plugin"
-version = "1.0.0"
-requires-python = ">=3.11"
-dependencies = [
-    "fulcra-api>=0.1.0"
-]
