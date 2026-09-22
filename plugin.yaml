@@ -6,7 +6,6 @@ provides_tools:
   - get_auth_url
   - submit_device_code
   - get_data_catalog
-python_runtime: external
 description: Fulcra Context tools and resources for Hermes Agent.
 author:
   name: Fulcra Dynamics
