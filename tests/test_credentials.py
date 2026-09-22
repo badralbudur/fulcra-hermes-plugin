@@ -1,38 +1,59 @@
-"""Credential lifecycle regressions; network responses are test fixtures."""
-import datetime
-import importlib.util
-import json
+"""Opt-in integration test of credential ownership in the published CLI.
+
+FULCRA_CLI_SMOKE=1 python3 -m unittest discover -s tests -v
+Downloads the pinned CLI into uv's cache. Uses only temporary fixture credentials;
+no authentication or Fulcra network requests are made.
+"""
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
 
-from fulcra_api.cli import utils
-from fulcra_api.credentials import FulcraCredentials
-
-spec = importlib.util.spec_from_file_location(
-    "context_tools_credentials", Path(__file__).resolve().parents[1] / "tools.py"
-)
-assert spec is not None and spec.loader is not None
-tools = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(tools)
+from test_tools import load_tools
 
 
+@unittest.skipUnless(os.environ.get("FULCRA_CLI_SMOKE") == "1", "set FULCRA_CLI_SMOKE=1 for uv integration")
 class CredentialTests(unittest.TestCase):
-    def test_catalog_uses_saved_credentials(self):
+    def test_published_cli_loads_and_saves_credentials(self):
+        uv = shutil.which("uv")
+        self.assertIsNotNone(uv, "uv must be installed for this integration test")
+        # Run SDK assertions inside uv's interpreter, never inside Hermes's.
+        script = '''
+import datetime, json, sys
+from pathlib import Path
+from click.testing import CliRunner
+from fulcra_api.cli import cli, utils
+from fulcra_api.core import FulcraAPI
+from fulcra_api.credentials import FulcraCredentials
+utils.CONFIG_PATH = Path(sys.argv[1])
+utils.CREDS_FILE = utils.CONFIG_PATH / "credentials.json"
+creds = FulcraCredentials(access_token="fixture-token", access_token_expiration=datetime.datetime.now() + datetime.timedelta(hours=1))
+utils.save_creds(creds)
+def catalog(client, **kwargs):
+    assert client.fulcra_credentials.access_token == "fixture-token"
+    assert callable(client.refresh_callback)
+    client.fulcra_credentials.access_token = "fixture-refreshed"
+    client.refresh_callback(client.fulcra_credentials)
+    return [{"id": "fixture-catalog"}]
+FulcraAPI.v1_catalog = catalog
+result = CliRunner().invoke(cli, ["catalog"])
+assert result.exit_code == 0, (result.output, repr(result.exception))
+assert [json.loads(line) for line in result.output.splitlines()] == [{"id": "fixture-catalog", "related_cli_commands": []}], result.output
+assert utils.load_creds().access_token == "fixture-refreshed"
+print("CLI credential load/refresh persistence: PASS (fixtures only)")
+'''
         with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as directory:
-            with patch.object(utils, "CREDS_FILE", Path(directory) / "creds.json"):
-                utils.save_creds(FulcraCredentials(access_token="test-token", access_token_expiration=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)))
-
-                def catalog(client):
-                    self.assertIsNotNone(client.fulcra_credentials)
-                    self.assertEqual(client.fulcra_credentials.access_token, "test-token")
-                    self.assertTrue(callable(client.refresh_callback))
-                    return [{"id": "test-fixture"}]
-
-                with patch.object(tools.FulcraAPI, "v1_catalog", catalog):
-                    self.assertEqual(json.loads(tools.fulcra_get_data_catalog({})), [{"id": "test-fixture"}])
+            probe = Path(directory) / "probe.py"
+            probe.write_text(script)
+            result = subprocess.run(
+                [uv, "tool", "run", "--isolated", "--no-config", "--from", load_tools().FULCRA_PACKAGE,
+                 "python", str(probe), directory],
+                capture_output=True, text=True, timeout=180,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn("PASS", result.stdout)
 
 
 if __name__ == "__main__":
