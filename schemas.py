@@ -23,7 +23,7 @@ AUTH_SUBMIT_CODE = {
 }
 
 GET_CATALOG = {
-    "description": "Get all data types available for this user from Fulcra. Includes health, location, events, and annotations.",
+    "description": "Get all data types available for this user from Fulcra.",
     "parameters": {
         "type": "object",
         "properties": {}

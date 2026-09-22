@@ -14,5 +14,5 @@ keywords:
   - context
   - health
   - data
-python_dependencies:
-  - "fulcra-api>=0.1.0"
+  - coordination
+  - loop
