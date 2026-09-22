@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "context": {
+      "url": "https://mcp.fulcradynamics.com/mcp",
+      "transport": "streamable-http"
+    }
+  }
+}
