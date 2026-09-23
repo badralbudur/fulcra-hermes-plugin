@@ -81,8 +81,12 @@ even if dependencies are cached. It has no offline/cache-only mode.
   OS-user storage, not per-profile or per-Discord-user storage. Separate accounts
   need a follow-up change to the CLI; uv isolation is not a security sandbox.
 - Authentication output is text. The CLI accepts the device code in argv, where
-  local process inspection may expose it. The adapter returns full CLI failure
-  diagnostics, redacts the device code, and does not log command lines. Structured output and
+  local process inspection may expose it. Errors retain their exception type and
+  useful diagnostics, but redact device codes, bearer tokens, credential fields,
+  and known credential-like environment values and strip terminal controls.
+  Timeout argv and partial output are never returned: outcomes are uncertain,
+  so verify writes before retrying. Successful stderr warnings are discarded.
+  The adapter does not log command lines. Structured output and
   stdin-based code input remain CLI follow-ups.
 - The CLI version is pinned, but transitive dependencies are not fully locked.
   Cache eviction can require new downloads and resolution.

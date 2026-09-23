@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import functools
@@ -57,12 +58,38 @@ def _tool(name, description, properties, required=()):
                     if not path.startswith("/") or "\\" in path or "//" in path or any(p in (".", "..") for p in path.split("/")):
                         raise ValueError("Use an explicit absolute remote path without dot segments.")
                 return fn(args)
-            except (ValueError, RuntimeError) as exc:
-                return f"Error: {exc}"
-            except Exception:
-                return "Error: Fulcra operation failed locally; check inputs, file permissions and the CLI installation."
+            except Exception as exc:
+                secrets = [args.get("device_code")] if isinstance(args, dict) else []
+                return _error_text(exc, secrets)
         return wrapped
     return decorate
+
+
+def _sanitize(text, secrets=()):
+    """Remove terminal controls, credential fields and known secret values."""
+    text = re.sub(r'\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]', '', str(text))
+    text = re.sub(r'[\x00-\x08\x0b-\x1f\x7f-\x9f]', '', text)
+    known = list(secrets) + [value for key, value in os.environ.items()
+                            if re.search(r'token|secret|password|api.?key|credential|device.?code', key, re.I)]
+    for value in sorted((v for v in known if isinstance(v, str) and v), key=len, reverse=True):
+        text = text.replace(value, '[redacted]')
+    text = re.sub(r'(?i)\bbearer\s+[^\s\"\'<>;,]+', 'Bearer [redacted]', text)
+    text = re.sub(r'(?i)(\bauthorization[\"\']?\s*[:=]\s*[\"\']?basic\s+)[^\s\"\'<>;,]+',
+                  r'\1[redacted]', text)
+    text = re.sub(r'(?i)(\b[a-z][a-z0-9+.-]*://)[^\s/\"\'<>?#]*@',
+                  r'\1[redacted]@', text)
+    field = r'(?:device[ _-]?code|id[ _-]?token|access[ _-]?token|refresh[ _-]?token|client[ _-]?secret|password|(?:x[ _-]?)?api[ _-]?key)'
+    text = re.sub(r'(?i)(\b' + field + r'[\"\']?\s*[:=]\s*)(\"(?:\\.|[^\"\\])*\"|\'(?:\\.|[^\'\\])*\'|[^\s,;}&]+)',
+                  r'\1[redacted]', text)
+    return text
+
+
+def _error_text(exc, secrets=()):
+    """Preserve sanitized exception diagnostics without formatting timeouts."""
+    if isinstance(exc, subprocess.TimeoutExpired):
+        return ('Error: TimeoutExpired: Fulcra CLI timed out; outcome is uncertain. '
+                'For writes, verify the resulting state before retrying.')
+    return _sanitize(f'Error: {type(exc).__name__}: {exc}', secrets)
 
 
 def _options(args, mapping):
@@ -128,15 +155,17 @@ def _run_cli(arguments, *, timeout=180):
             text=True, encoding="utf-8", errors="replace", timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        # TimeoutExpired contains argv (including the device code); don't expose it.
-        raise RuntimeError(f"Fulcra CLI timed out after {timeout} seconds; retry the operation.") from None
-    except OSError:
-        raise RuntimeError("Could not start Fulcra CLI; check the host's uv installation.") from None
+        # The handler never formats timeout argv or partial output.
+        raise
+    except OSError as exc:
+        raise type(exc)(_sanitize(str(exc)) + "; check the host's uv installation.") from None
     if result.returncode:
         detail = (result.stderr or result.stdout).strip() or "no diagnostic output"
+        secrets = [value for key, value in env.items()
+                   if re.search(r'token|secret|password|api.?key|credential|device.?code', key, re.I)]
         if "--device-code" in arguments:
-            detail = detail.replace(arguments[arguments.index("--device-code") + 1], "[redacted]")
-
+            secrets.append(arguments[arguments.index("--device-code") + 1])
+        detail = _sanitize(detail, secrets)
         raise RuntimeError(f"Fulcra CLI exited with status {result.returncode}: {detail}")
     output = result.stdout
     # Empty read/mutation output is valid; authentication must return its codes.

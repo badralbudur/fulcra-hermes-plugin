@@ -36,7 +36,7 @@ class AdapterTests(unittest.TestCase):
     def test_auth_unexpected_errors_are_safe_and_output_is_complete(self):
         tools = load_tools()
         for handler, args in ((tools.fulcra_auth, {}), (tools.fulcra_auth_device, {"device_code": "fixture"})):
-            with patch.object(tools, "_run_cli", side_effect=OSError("private-secret")):
+            with patch.object(tools, "_run_cli", side_effect=OSError("password=private-secret")):
                 result = handler(args)
             self.assertNotIn("private-secret", result)
             self.assertTrue(result.startswith("Error"))
@@ -69,7 +69,7 @@ class AdapterTests(unittest.TestCase):
                  patch("shutil.which", return_value="/bin/uv"), \
                  patch("subprocess.run", return_value=subprocess.CompletedProcess([], 2, stdout, stderr)):
                 result = tools.fulcra_data_catalog({})
-            self.assertEqual(result, f"Error: Fulcra CLI exited with status 2: {expected}")
+            self.assertEqual(result, f"Error: RuntimeError: Fulcra CLI exited with status 2: {expected}")
 
     def test_catalog_filters_preserve_cli_output(self):
         tools = load_tools()
