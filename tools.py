@@ -22,10 +22,12 @@ BASE_TYPES = ["MomentAnnotation", "DurationAnnotation", "BooleanAnnotation", "Nu
 
 
 def _array(items=STRING):
+    """Describe a nonempty array of schema items."""
     return {"type": "array", "items": items, "minItems": 1}
 
 
 def _enum(*values):
+    """Describe a string restricted to the supplied values."""
     return {"type": "string", "enum": list(values)}
 
 
@@ -37,13 +39,16 @@ def _pos(value):
 
 
 def _tool(name, description, properties, required=()):
+    """Register a schema and wrap its handler with input and error guards."""
     schema = {"description": description, "parameters": {
         "type": "object", "properties": properties, "required": list(required), "additionalProperties": False}}
     TOOL_SCHEMAS[name] = schema
 
     def decorate(fn):
+        """Attach the agent-facing boundary to a handler."""
         @functools.wraps(fn)
         def wrapped(args, **kwargs):
+            """Validate arguments and return handler output or a safe error."""
             try:
                 if not isinstance(args, dict) or args.keys() - properties.keys():
                     raise ValueError("Unknown tool arguments.")
@@ -61,6 +66,7 @@ def _tool(name, description, properties, required=()):
 
 
 def _options(args, mapping):
+    """Translate supplied fields into literal CLI options."""
     result = []
     for key, flag in mapping.items():
         if key not in args:
@@ -85,6 +91,7 @@ FULCRA_PACKAGE = "fulcra-api==0.1.42"
 
 
 def _runtime_context():
+    """Resolve install policy and child environment for the active profile."""
     # Resolve settings and secrets at call time for the active Hermes profile.
     from hermes_cli.config import load_config
     from hermes_constants import get_hermes_home
@@ -157,6 +164,7 @@ def fulcra_auth_device(args):
     "recordable_only": BOOLEAN, "queryable_only": BOOLEAN, "category": STRING,
     "api_version": STRING, "user_id": UUID})
 def fulcra_data_catalog(args):
+    """Read the filtered data catalog."""
     command = ["catalog"] + _options(args, {
         "data_type": "--data-type", "name": "--name", "base_types_only": "--base-types-only",
         "recordable_only": "--recordable-only", "queryable_only": "--queryable-only",
@@ -169,6 +177,7 @@ def fulcra_data_catalog(args):
     "tags": _array(), "metric_kind": _enum("cumulative", "discrete"),
     "default_value": STRING, "unit": STRING, "scale_labels": _array()}, ("base_type", "name"))
 def fulcra_create_data_type(args):
+    """Create an annotation type after guarding unsupported defaults."""
     base = args["base_type"]
     # The CLI validates units, labels and defaults; these two gaps need guarding.
     if "default_value" in args and base == "ScaleAnnotation":
@@ -184,6 +193,7 @@ def fulcra_create_data_type(args):
 @_tool("fulcra_data_type_schema", "Read the JSON record schema before fulcra_record. Use api_version to disambiguate catalog entries; user_id selects a shared owner's schema.", {
     "data_type": DATA_TYPE, "api_version": STRING, "user_id": UUID}, ("data_type",))
 def fulcra_data_type_schema(args):
+    """Read a type's record schema."""
     command = ["data-type", "schema", _pos(args["data_type"])] + _options(args, {"api_version": "--api-version", "user_id": "--user-id"})
     return _run_cli(command)
 
@@ -191,6 +201,7 @@ def fulcra_data_type_schema(args):
 @_tool("fulcra_data_type_lifecycle", "Archive or restore your user-defined annotation type. This changes availability of the type, not a request to delete individual records. Requires the complete BaseAnnotation/UUID ID.", {
     "data_type": DATA_TYPE, "action": _enum("archive", "restore")}, ("data_type", "action"))
 def fulcra_data_type_lifecycle(args):
+    """Archive or restore an explicitly identified annotation type."""
     if args["action"] not in ("archive", "restore"):
         raise ValueError("action must be archive or restore.")
     parts = args["data_type"].split("/")
@@ -205,6 +216,7 @@ TIME_RANGE = {"type": "array", "items": STRING, "minItems": 1, "maxItems": 2,
 
 
 def _timestamp(value):
+    """Parse an ISO8601 timestamp requiring a timezone."""
     try:
         parsed = datetime.fromisoformat(value)
         if parsed.tzinfo is None or parsed.utcoffset() is None:
@@ -215,6 +227,7 @@ def _timestamp(value):
 
 
 def _times(args, *, latest=False):
+    """Validate and translate a query interval or timestamp pair."""
     values = args["time_range"]
     if not isinstance(values, list) or len(values) not in (1, 2):
         raise ValueError("time_range must contain one interval or two timestamps.")
@@ -227,6 +240,7 @@ def _times(args, *, latest=False):
 
 
 def _record_file(command, rows):
+    """Stage private JSONL records for the CLI and clean up afterward."""
     payload = "\n".join(json.dumps(row, allow_nan=False) for row in rows)
     with tempfile.TemporaryDirectory(prefix="fulcra-record-") as directory:
         path = Path(directory) / "records.jsonl"
@@ -240,6 +254,7 @@ def _record_file(command, rows):
     "data_type": DATA_TYPE, "record": {"type": "object"}, "records": _array({"type": "object"}),
     "api_version": STRING, "tags": _array(), "sources": _array()}, ("data_type",))
 def fulcra_record(args):
+    """Upload exactly one record source with CLI schema validation."""
     if ("record" in args) == ("records" in args):
         raise ValueError("Provide exactly one of record or records.")
     rows = [args["record"]] if "record" in args else args["records"]
@@ -253,6 +268,7 @@ DELETION = {"type": "object", "properties": {"record_id": UUID}, "required": ["r
 @_tool("fulcra_delete_records", "Delete only explicitly identified records from your recordable data type. Provide exactly one of record_id, record {record_id: UUID}, or records [{record_id: UUID}]. No time-range or all-record deletion. Retrieve IDs with fulcra_get_records first; deletion uploads may process asynchronously.", {
     "data_type": DATA_TYPE, "record_id": UUID, "record": DELETION, "records": _array(DELETION), "api_version": STRING}, ("data_type",))
 def fulcra_delete_records(args):
+    """Submit deletion records for explicitly selected record IDs."""
     if sum(key in args for key in ("record_id", "record", "records")) != 1:
         raise ValueError("Provide exactly one of record_id, record or records.")
     command = ["delete", _pos(args["data_type"])]
@@ -271,6 +287,7 @@ def fulcra_delete_records(args):
     "data_type": DATA_TYPE, "time_range": TIME_RANGE, "user_id": UUID,
     "group_id": UUID, "participant_id": STRING}, ("data_type", "time_range"))
 def fulcra_get_records(args):
+    """Read records with a single owner or group-participant scope."""
     if ("group_id" in args) != ("participant_id" in args) or ("group_id" in args and "user_id" in args):
         raise ValueError("Use user_id OR the pair group_id and participant_id.")
     command = ["get-records", _pos(args["data_type"]), *_times(args, latest=True)] + _options(args, {
@@ -281,6 +298,7 @@ def fulcra_get_records(args):
 @_tool("fulcra_data_updates", "Read data/file processing updates during a time range, not record event times. Useful after fulcra_record or upload; no latest mode. user_id requires shared access.", {
     "time_range": TIME_RANGE, "user_id": UUID}, ("time_range",))
 def fulcra_data_updates(args):
+    """Read processing updates in a validated interval."""
     command = ["data-updates", *_times(args)] + _options(args, {"user_id": "--user-id"})
     return _run_cli(command)
 
@@ -290,6 +308,7 @@ SHARE_TIMES = {"start_time": STRING, "end_time": STRING}
 
 
 def _share_times(args):
+    """Validate share boundaries and conflicting removal flags."""
     for key in SHARE_TIMES:
         if key in args:
             _timestamp(args[key])
@@ -303,6 +322,7 @@ def _share_times(args):
     "name": STRING, "data_types": _array(DATA_TYPE), "files": _array(REMOTE_PATH),
     "user_ids": _array(UUID), "group_ids": _array(UUID), "share_all": BOOLEAN, **SHARE_TIMES})
 def fulcra_create_share(args):
+    """Create a share with explicit recipients and scope."""
     if type(args.get("share_all", False)) is not bool:
         raise ValueError("share_all must be an explicit boolean.")
     if not (args.get("user_ids") or args.get("group_ids")):
@@ -332,6 +352,7 @@ SHARE_UPDATE_FLAGS = {f"{action}_{key}": f"--{action}-{flag}"
     "share_all": BOOLEAN, **SHARE_TIMES, "no_start_time": BOOLEAN,
     "no_end_time": BOOLEAN, "clear": BOOLEAN}, ("share_id",))
 def fulcra_update_share(args):
+    """Apply explicit share changes after checking selector conflicts."""
     if type(args.get("share_all", False)) is not bool:
         raise ValueError("share_all must be an explicit boolean.")
     if not any(value or key == "share_all" for key, value in args.items() if key != "share_id"):
@@ -361,6 +382,7 @@ def fulcra_update_share(args):
 @_tool("fulcra_list_shares", "List incoming grants, outgoing shares, or both (default). With both, CLI outputs are labeled by direction. Incoming grant_id is for fulcra_leave_share; outgoing share ID is for fulcra_update_share/delete_share. Group grants cannot be left individually.", {
     "direction": _enum("incoming", "outgoing", "both")})
 def fulcra_list_shares(args):
+    """List grants and shares with direction labels when combined."""
     direction = args.get("direction", "both")
     if direction not in ("incoming", "outgoing", "both"):
         raise ValueError("direction must be incoming, outgoing or both.")
@@ -372,21 +394,25 @@ def fulcra_list_shares(args):
 
 @_tool("fulcra_delete_share", "Revoke an entire outgoing share you created, removing every recipient's access through it. Read fulcra_list_shares outgoing and confirm scope first. This does not delete underlying records/files.", {"share_id": UUID}, ("share_id",))
 def fulcra_delete_share(args):
+    """Revoke an explicitly identified outgoing share."""
     return _run_cli(["share", "delete", _pos(args["share_id"])])
 
 
 @_tool("fulcra_leave_share", "Give up your individual incoming grant. Use grant_id (not share ID) from fulcra_list_shares. Group grants cannot be left with this tool; group membership management is outside this surface.", {"grant_id": UUID}, ("grant_id",))
 def fulcra_leave_share(args):
+    """Relinquish an explicitly identified incoming grant."""
     return _run_cli(["share", "leave", _pos(args["grant_id"])])
 
 
 @_tool("fulcra_shared_data_types", "Check what an owner shares with you before querying their records. Request a window strictly inside the grant's boundaries: its end comparison is strict. all_data_types=true with an empty type list means everything is shared, not nothing. Includes group grants.", {
     "user_id": UUID, "time_range": TIME_RANGE}, ("user_id", "time_range"))
 def fulcra_shared_data_types(args):
+    """Read an owner's shared types for a validated interval."""
     return _run_cli(["share", "shared-data-types", _pos(args["user_id"]), *_times(args)])
 
 
 def _local_path(value, *, new=False):
+    """Require an absolute existing source or unused destination path."""
     path = Path(value)
     if not path.is_absolute():
         raise ValueError("local_path must be an absolute local file path.")
@@ -404,6 +430,7 @@ def _local_path(value, *, new=False):
     "path": REMOTE_PATH, "local_path": STRING,
     "content": {"type": "string", "description": "Literal UTF-8 text (may be empty); never treated as CLI options."}}, ("path",))
 def fulcra_file_upload(args):
+    """Upload local bytes or privately staged literal UTF-8 text."""
     if ("local_path" in args) == ("content" in args):
         raise ValueError("Provide exactly one of local_path or content.")
     if "local_path" in args:
@@ -423,6 +450,7 @@ def fulcra_file_upload(args):
 @_tool("fulcra_file_download", "Download the latest remote file version. With local_path, save exact bytes to a new absolute local file without overwriting. Otherwise return the full UTF-8 text. Binary files require local_path; user_id selects a shared owner.", {
     "path": REMOTE_PATH, "local_path": STRING, "user_id": UUID}, ("path",))
 def fulcra_file_download(args):
+    """Download exact bytes exclusively or return decoded UTF-8 text."""
     target = _local_path(args["local_path"], new=True) if "local_path" in args else None
     with tempfile.TemporaryDirectory(prefix="fulcra-download-") as directory:
         staged = Path(directory) / "download"
@@ -446,6 +474,7 @@ def fulcra_file_download(args):
 @_tool("fulcra_file_list", "List a remote directory (default '/'), optionally for a shared owner. Returns CLI text. Use fulcra_file_stat for versions and fulcra_file_download for contents.", {
     "path": REMOTE_PATH, "user_id": UUID})
 def fulcra_file_list(args):
+    """List a remote directory for the selected owner."""
     raw = _run_cli(["file", "list", args.get("path", "/")] + _options(args, {"user_id": "--user-id"}))
     return raw
 
@@ -453,22 +482,26 @@ def fulcra_file_list(args):
 @_tool("fulcra_file_stat", "Read file size, upload time and version IDs as CLI text lines. Your own files include previous versions usable by fulcra_file_restore; shared owners' files expose latest version only.", {
     "path": REMOTE_PATH, "user_id": UUID}, ("path",))
 def fulcra_file_stat(args):
+    """Read remote file metadata and available versions."""
     raw = _run_cli(["file", "stat", args["path"]] + _options(args, {"user_id": "--user-id"}))
     return raw
 
 
 @_tool("fulcra_file_delete", "Delete your file at an explicit remote path. Inspect fulcra_file_stat first and retain version IDs if restoration may be needed. This is not a recursive directory delete and does not revoke shares.", {"path": REMOTE_PATH}, ("path",))
 def fulcra_file_delete(args):
+    """Delete one explicitly selected remote file."""
     return _run_cli(["file", "delete", args["path"]])
 
 
 @_tool("fulcra_file_restore", "Restore a previous file version using its exact version UUID from fulcra_file_stat. This changes the current version at the original path; inspect stat afterward.", {"version_id": UUID}, ("version_id",))
 def fulcra_file_restore(args):
+    """Restore an explicitly selected file version."""
     return _run_cli(["file", "restore", _pos(args["version_id"])])
 
 
 @_tool("fulcra_file_share", "Grant explicit users access to the latest file versions at a path/prefix using the CLI file share command. Directories include future files; '/' grants all files. No history is granted. For groups or time bounds use fulcra_create_share with files instead. Verify with fulcra_list_shares outgoing.", {
     "path": REMOTE_PATH, "user_ids": _array(UUID), "name": STRING}, ("path", "user_ids"))
 def fulcra_file_share(args):
+    """Grant explicit users access to a remote file or prefix."""
     command = ["file", "share", args["path"]] + _options(args, {"user_ids": "--to", "name": "--name"})
     return _run_cli(command)
