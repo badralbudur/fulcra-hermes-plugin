@@ -85,13 +85,15 @@ limit, not a subprocess memory or disk quota.
 
 Artifacts persist until manually deleted. They can contain sensitive health data
 and should not be shared or publicly backed up. There is no automatic cleanup.
-Only sanitized errors are persisted. Successful auth output is never persisted;
+Errors retain exception types and details, with only the supplied device code
+explicitly redacted; the adapter trusts the CLI for other sanitization, including
+in saved artifacts. Successful auth output is never persisted;
 oversized responses retain the pinned CLI's complete URL/code lines or success
 message, or report that usable fields could not be retained. Auth codes still
-appear in the tool conversation as required for the device flow. Sanitization
-is credential-focused, not general PII removal or a guarantee for arbitrary
-unlabeled/encoded secrets. Storage errors warn that the operation may already
-have completed and writes must be verified before retrying.
+appear in the tool conversation as required for the device flow. There is no
+adapter-level generic secret or terminal-control sanitization. Storage errors
+warn that the operation may already have completed and writes must be verified
+before retrying.
 
 Settings and the credential-scrubbed child environment are resolved at call time
 through Hermes's profile-aware helpers. Older Hermes versions without
@@ -104,23 +106,21 @@ even if dependencies are cached. It has no offline/cache-only mode.
 
 ## Limitations
 
-Share guards follow pinned `cli/share.py`: `list-outgoing` emits one JSON object
-per line with `id`, `fulcra_data_types` and `share_all_data`. File selectors are
-`file:/prefix` (history selectors are `filehistory:/prefix`). `set_data_types`
-replaces all selectors; `clear` also disables all-data scope; file removals are
-exact selector matches. Bounds-only updates inspect this JSONL, never a guessed
-array/envelope. Missing, malformed or ambiguous scope fails closed. Adding file
-scope also checks existing `time_start`/`time_end` unless both are explicitly
-removed. The CLI has no atomic compare-and-set; verify after changes and avoid
-concurrent edits.
+Share time bounds limit the accessible time range of time-series data types
+only, never file access. File/all-data shares can carry bounds for data types.
+The adapter validates timestamps and conflicting flags, but does not fetch
+outgoing share state before updates. `set_data_types` replaces all selectors;
+`clear` also disables all-data scope; file removals are exact selector matches.
+Inspect shares before changing access and verify afterward.
 
 - The CLI owns credentials at `~/.config/fulcra/credentials.json`. This is shared
   OS-user storage, not per-profile or per-Discord-user storage. Separate accounts
   need a follow-up change to the CLI; uv isolation is not a security sandbox.
 - Authentication output is text. The CLI accepts the device code in argv, where
   local process inspection may expose it. Errors retain their exception type and
-  useful diagnostics, but redact device codes, bearer tokens, credential fields,
-  and known credential-like environment values and strip terminal controls.
+  useful diagnostics, with only the supplied device code explicitly redacted.
+  The CLI owns all other sanitization; the adapter does not scan environment
+  values, redact generic credentials, or strip terminal controls.
   Timeout argv and partial output are never returned: outcomes are uncertain,
   so verify writes before retrying. Successful stderr warnings are discarded.
   The adapter does not log command lines. Structured output and

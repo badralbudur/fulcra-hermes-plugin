@@ -34,18 +34,17 @@ description: Use Fulcra tools for catalogs, records, sharing, updates and files.
   `share_all:true` when requested. Group recipients include future members.
 - Updates change supplied fields: `set_data_types` replaces all data/file
   selectors; `set_files` replaces only files. `clear` clears shared selectors and
-  all-data mode; `no_group_ids` clears groups. Removing time bounds broadens access.
+  all-data mode; `no_group_ids` clears groups. Removing time bounds broadens
+  time-series data access only, not file access.
 - Use `fulcra_shared_data_types` before querying another owner's data. Request a
   window strictly inside the grant's bounds. `all_data_types:true` with an empty
   type list means all data is shared. Pass the owner's `user_id` to read tools.
 - File selectors must be literal absolute POSIX paths. Root `/` is allowed;
   relative paths, dot segments, backslashes, double slashes and NUL are rejected.
-- File or all-data scope cannot have time bounds. Updates inspect the outgoing
-  share when needed and fail closed if its effective scope cannot be established.
-  Adding files also checks existing bounds. Remove file/all-data scope (including
-  via `clear`) before adding bounds, or explicitly remove both bounds before
-  adding file scope. Verify each change; these checks are not atomic, so avoid
-  concurrent share edits.
+- Time bounds limit the accessible time range of time-series data types only,
+  never file access. File/all-data shares can carry bounds for data types.
+  The adapter does not fetch outgoing share state before updates; inspect it
+  before changing access.
 - Verify shares after changes. Deleting a share revokes access, not underlying data.
 
 ## Files and results
@@ -59,7 +58,8 @@ description: Use Fulcra tools for catalogs, records, sharing, updates and files.
   Existing local files are not overwritten; binary downloads require a local path.
 - File sharing grants latest-version access to path prefixes, including future
   files; `/` covers all files. Use `fulcra_create_share` for group recipients.
-- Results up to 16,000 UTF-8 bytes are returned unchanged (errors are sanitized).
+- Results up to 16,000 UTF-8 bytes are returned unchanged, except for explicit
+  device-code redaction in errors and special timeout output.
   Larger results return a byte-bounded preview, an explicit truncation notice,
   and an absolute path to the complete local UTF-8 artifact. Read that file with
   local file tools, paging as needed; the preview is not a complete dataset or
@@ -67,8 +67,10 @@ description: Use Fulcra tools for catalogs, records, sharing, updates and files.
 - Artifacts live in the active Hermes profile's `fulcra-output/` directory
   (0700), in private 0600 files. They may contain sensitive health data; do not
   share them or put them in public backups. Retention is manual: files remain
-  until explicitly deleted, with no automatic cleanup. Error sanitization is
-  credential-focused, not general PII removal or a guarantee for arbitrary secrets.
+  until explicitly deleted, with no automatic cleanup. Errors retain exception
+  types and details; only the supplied device code is explicitly redacted.
+  The CLI owns other sanitization, including for saved errors. Successful stderr
+  warnings are discarded; timeout errors omit argv and partial output.
 - Successful auth output is never saved as an artifact. Oversized auth output
   retains complete URL/code lines or the success message when possible. If usable
   fields cannot be retained, check auth state before starting another flow.

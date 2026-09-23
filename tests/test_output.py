@@ -69,27 +69,6 @@ class OutputTests(unittest.TestCase):
             result = self.tools.fulcra_file_download({'path': '/fixture'})
         self.assertEqual(self.artifact(result).read_text(), text)
 
-    def test_only_sanitized_errors_persist(self):
-        raw = 'password="hidden password" Bearer hidden-token\x1b[31m denied\n' + 'x' * 20000
-        with patch.object(self.tools, '_run_cli', side_effect=PermissionError(raw)):
-            output = self.tools.fulcra_data_catalog({})
-        full = self.artifact(output).read_text()
-        self.assertIn('PermissionError', full)
-        self.assertIn('denied', full)
-        for value in ('hidden password', 'hidden-token', '\x1b'):
-            self.assertNotIn(value, output + full)
-
-    def test_saved_error_redacts_id_token_basic_and_url_userinfo(self):
-        raw = ('FulcraCredentials(id_token="private-jwt") '
-               'Authorization: Basic dXNlcjpwYXNz '
-               'https://alice:p%40ss@example.test/safe/path denied\n' + 'x' * 20000)
-        with patch.object(self.tools, '_run_cli', side_effect=RuntimeError(raw)):
-            output = self.tools.fulcra_data_catalog({})
-        full = self.artifact(output).read_text()
-        for secret in ('private-jwt', 'dXNlcjpwYXNz', 'alice:p%40ss'):
-            self.assertNotIn(secret, output + full)
-        self.assertIn('example.test/safe/path denied', full)
-
     def test_oversized_real_cli_auth_success_without_persistence(self):
         raw = 'warning\n' * 4000 + '✅ Authorization successful!\n'
         with patch.object(self.tools, '_run_cli', return_value=raw):
@@ -149,7 +128,7 @@ class OutputTests(unittest.TestCase):
         real_open = self.tools.os.open
         def fail_create(path, flags, mode=0o777, *, dir_fd=None):
             if flags & self.tools.os.O_CREAT:
-                raise OSError('password=secret disk full')
+                raise OSError('disk full')
             return real_open(path, flags, mode, dir_fd=dir_fd)
         with patch.object(self.tools, '_run_cli', return_value='x' * 50000), \
              patch.object(self.tools.os, 'open', side_effect=fail_create):
@@ -158,7 +137,7 @@ class OutputTests(unittest.TestCase):
         self.assertIn('artifact', output)
         self.assertIn('verify', output)
         self.assertNotIn('Complete UTF-8 text:', output)
-        self.assertNotIn('secret', output)
+        self.assertIn('OSError: disk full', output)
         self.assertLess(len(output.encode()), 18000)
         self.assertFalse(list(self.home.rglob('*.txt')))
 

@@ -33,13 +33,9 @@ class AdapterTests(unittest.TestCase):
         modules.start()
         self.addCleanup(modules.stop)
 
-    def test_auth_unexpected_errors_are_safe_and_large_output_is_not_persisted(self):
+    def test_large_auth_output_is_not_persisted(self):
         tools = load_tools()
         for handler, args in ((tools.fulcra_auth, {}), (tools.fulcra_auth_device, {"device_code": "fixture"})):
-            with patch.object(tools, "_run_cli", side_effect=OSError("password=private-secret")):
-                result = handler(args)
-            self.assertNotIn("private-secret", result)
-            self.assertTrue(result.startswith("Error"))
             with patch.object(tools, "_run_cli", return_value="x" * 40000):
                 result = handler(args)
             self.assertLess(len(result.encode('utf-8')), 18000)
@@ -174,21 +170,25 @@ class AdapterTests(unittest.TestCase):
 
     def test_timeout_does_not_leak_command_or_partial_output(self):
         tools = load_tools()
-        error = subprocess.TimeoutExpired(["uv", "sensitive-command"], 1, output="sensitive-output")
+        error = subprocess.TimeoutExpired(["uv", "sensitive-command"], 1, output="sensitive-output", stderr="sensitive-stderr")
         with patch.object(tools, "_runtime_context", return_value=(True, {"PATH": "/bin"})), \
              patch("shutil.which", return_value="/bin/uv"), patch("subprocess.run", side_effect=error):
             output = tools.fulcra_data_catalog({})
         self.assertIn("timed out", output)
+        self.assertIn("TimeoutExpired", output)
+        self.assertIn("uncertain", output)
+        self.assertIn("verify", output)
         self.assertNotIn("sensitive", output)
 
     def test_cli_failure_is_complete_with_device_code_redacted(self):
         tools = load_tools()
-        result = subprocess.CompletedProcess([], 1, "", "fixture-device " + "x" * 5000)
+        result = subprocess.CompletedProcess([], 1, "", "fixture-device: denied /safe/path; password=CLI-owned")
         with patch.object(tools, "_runtime_context", return_value=(True, {"PATH": "/bin"})), \
              patch("shutil.which", return_value="/bin/uv"), patch("subprocess.run", return_value=result):
             output = tools.fulcra_auth_device({"device_code": "fixture-device"})
         self.assertIn("[redacted]", output)
-        self.assertIn("x" * 5000, output)
+        self.assertIn("RuntimeError: Fulcra CLI exited with status 1", output)
+        self.assertIn("denied /safe/path; password=CLI-owned", output)
         self.assertNotIn("fixture-device", output)
 
     def test_empty_success_is_an_error(self):
@@ -204,7 +204,7 @@ class AdapterTests(unittest.TestCase):
             with self.subTest(raw=raw), \
                  patch.object(tools, "_runtime_context", return_value=(True, {"PATH": "/bin"})), \
                  patch("shutil.which", return_value="/bin/uv"), \
-                 patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, raw, "")):
+                 patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, raw, "discarded warning")):
                 self.assertEqual(tools.fulcra_data_catalog({}), raw)
 
 

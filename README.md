@@ -48,9 +48,12 @@ Artifacts are private files (0600) in the active Hermes profile's
 health data: do not share them or include them in public backups. They remain
 until you explicitly delete them; there is no automatic retention cleanup.
 Successful authentication output is never saved there; oversized auth responses
-retain the URL and complete codes when possible. Errors are sanitized before
-previewing or saving. If storage fails, the tool reports that the full result is
-unavailable; the operation may still have completed, so verify writes before
+retain the URL and complete codes when possible. Errors retain exception types
+and details, with only the supplied device code explicitly redacted; other
+sanitization is the CLI's responsibility. Timeout errors omit argv and partial
+output. Successful stderr warnings are discarded. If storage fails, the tool
+reports that the full result is unavailable; the operation may still have
+completed, so verify writes before
 retrying. Secure artifact storage requires POSIX descriptor-relative file APIs
 and `O_NOFOLLOW`, not Linux/procfs. The existing checks still require a profile
 path without symlink components; use a canonical physical path (for example,
@@ -59,11 +62,10 @@ macOS `/var` commonly resolves through a symlink to `/private/var`).
 The bundled [usage skill](skills/context/SKILL.md) explains the available tools.
 File selectors require literal absolute POSIX paths (root `/` is allowed);
 relative paths, dot segments, backslashes, double slashes and NUL are rejected.
-File/all-data shares cannot have time bounds. Updates that add bounds inspect
-the outgoing share first and fail closed if its scope cannot be established.
-Safe removal/clear transitions are supported; otherwise change scope and bounds
-in separate operations and verify each change. This check is not an atomic lock:
-avoid concurrent share edits.
+Time bounds limit the accessible time range of time-series data types only,
+never file access. File/all-data shares can carry bounds for their data types.
+The adapter does not fetch outgoing share state before updates; inspect shares
+before changing access and verify afterward.
 Authentication uses `fulcra_auth` and `fulcra_auth_device`.
 
 Credentials live at `~/.config/fulcra/credentials.json` under the host OS account.

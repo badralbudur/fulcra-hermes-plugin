@@ -2,7 +2,6 @@
 
 import json
 import os
-import re
 import stat
 import shutil
 import subprocess
@@ -52,7 +51,7 @@ def _tool(name, description, properties, required=()):
         """Attach the agent-facing boundary to a handler."""
         @functools.wraps(fn)
         def wrapped(args, **kwargs):
-            """Validate arguments and return handler output or a safe error."""
+            """Validate arguments and return handler output or exception details."""
             try:
                 if not isinstance(args, dict) or args.keys() - properties.keys():
                     raise ValueError("Unknown tool arguments.")
@@ -60,45 +59,27 @@ def _tool(name, description, properties, required=()):
                     _remote_path(args["path"])
                 for key in ('files', 'add_files', 'remove_files', 'set_files'):
                     if key in args:
-                        if not isinstance(args[key], list) or not args[key]:
-                            raise ValueError(f'{key} must be a nonempty list.')
                         for path in args[key]:
                             _remote_path(path)
                 output = fn(args)
             except Exception as exc:
-                secrets = [args.get("device_code")] if isinstance(args, dict) else []
-                output = _error_text(exc, secrets)
+                device_code = args.get("device_code") if isinstance(args, dict) else None
+                output = _error_text(exc, device_code)
                 return _bounded_output(output)
             return _bounded_output(output, auth=name in ('fulcra_auth', 'fulcra_auth_device'))
         return wrapped
     return decorate
 
 
-def _sanitize(text, secrets=()):
-    """Remove terminal controls, credential fields and known secret values."""
-    text = re.sub(r'\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]', '', str(text))
-    text = re.sub(r'[\x00-\x08\x0b-\x1f\x7f-\x9f]', '', text)
-    known = list(secrets) + [value for key, value in os.environ.items()
-                            if re.search(r'token|secret|password|api.?key|credential|device.?code', key, re.I)]
-    for value in sorted((v for v in known if isinstance(v, str) and v), key=len, reverse=True):
-        text = text.replace(value, '[redacted]')
-    text = re.sub(r'(?i)\bbearer\s+[^\s\"\'<>;,]+', 'Bearer [redacted]', text)
-    text = re.sub(r'(?i)(\bauthorization[\"\']?\s*[:=]\s*[\"\']?basic\s+)[^\s\"\'<>;,]+',
-                  r'\1[redacted]', text)
-    text = re.sub(r'(?i)(\b[a-z][a-z0-9+.-]*://)[^\s/\"\'<>?#]*@',
-                  r'\1[redacted]@', text)
-    field = r'(?:device[ _-]?code|id[ _-]?token|access[ _-]?token|refresh[ _-]?token|client[ _-]?secret|password|(?:x[ _-]?)?api[ _-]?key)'
-    text = re.sub(r'(?i)(\b' + field + r'[\"\']?\s*[:=]\s*)(\"(?:\\.|[^\"\\])*\"|\'(?:\\.|[^\'\\])*\'|[^\s,;}&]+)',
-                  r'\1[redacted]', text)
-    return text
-
-
-def _error_text(exc, secrets=()):
-    """Preserve sanitized exception diagnostics without formatting timeouts."""
+def _error_text(exc, device_code=None):
+    """Preserve diagnostics, redacting the supplied device code and hiding timeouts."""
     if isinstance(exc, subprocess.TimeoutExpired):
         return ('Error: TimeoutExpired: Fulcra CLI timed out; outcome is uncertain. '
                 'For writes, verify the resulting state before retrying.')
-    return _sanitize(f'Error: {type(exc).__name__}: {exc}', secrets)
+    text = f'Error: {type(exc).__name__}: {exc}'
+    if isinstance(device_code, str) and device_code:
+        text = text.replace(device_code, '[redacted]')
+    return text
 
 
 def _artifact_directory():
@@ -255,14 +236,9 @@ def _run_cli(arguments, *, timeout=180):
         # The handler never formats timeout argv or partial output.
         raise
     except OSError as exc:
-        raise type(exc)(_sanitize(str(exc)) + "; check the host's uv installation.") from None
+        raise type(exc)(str(exc) + "; check the host's uv installation.") from None
     if result.returncode:
         detail = (result.stderr or result.stdout).strip() or "no diagnostic output"
-        secrets = [value for key, value in env.items()
-                   if re.search(r'token|secret|password|api.?key|credential|device.?code', key, re.I)]
-        if "--device-code" in arguments:
-            secrets.append(arguments[arguments.index("--device-code") + 1])
-        detail = _sanitize(detail, secrets)
         raise RuntimeError(f"Fulcra CLI exited with status {result.returncode}: {detail}")
     output = result.stdout
     # Empty read/mutation output is valid; authentication must return its codes.
@@ -430,7 +406,10 @@ def fulcra_data_updates(args):
 
 
 REMOTE_PATH = {"type": "string", "pattern": r"^/[^\x00]*$", "description": "Explicit absolute POSIX remote path. '/' shares/lists the entire file tree; directory prefixes include future files."}
-SHARE_TIMES = {"start_time": STRING, "end_time": STRING}
+SHARE_TIMES = {
+    "start_time": {**STRING, "description": "ISO8601 timestamp with timezone. Limits the start of accessible time-series data only, never file access, including in file/all-data shares."},
+    "end_time": {**STRING, "description": "ISO8601 timestamp with timezone. Limits the end of accessible time-series data only, never file access, including in file/all-data shares."},
+}
 
 
 def _remote_path(value):
@@ -439,55 +418,6 @@ def _remote_path(value):
     if not path.startswith('/') or '\\' in path or '//' in path or any(p in ('.', '..') for p in path.split('/')):
         raise ValueError('Use an explicit absolute remote path without dot segments, backslashes or double slashes.')
     return path
-
-
-def _share_file_bounds(args, *, update=False):
-    """Reject time-bounded file/all-data scope using pinned CLI JSONL state."""
-    for key in ('data_types', 'add_data_types', 'remove_data_types', 'set_data_types'):
-        if key in args and (not isinstance(args[key], list) or not args[key] or
-                            any(not isinstance(t, str) or not re.fullmatch(DATA_TYPE['pattern'], t) for t in args[key])):
-            raise ValueError(f'{key} must contain catalog data type IDs; use file selectors for files.')
-    bounded = any(key in args for key in SHARE_TIMES)
-    adds_files = bool(args.get('files') or args.get('add_files') or args.get('set_files') or args.get('share_all'))
-    conflict = 'File/all-data scope cannot have time bounds. Remove file/all-data scope or time bounds in separate operations, then verify.'
-    if bounded and adds_files:
-        raise ValueError(conflict)
-    if not update or (not bounded and not adds_files):
-        return
-    if not bounded and args.get('no_start_time') and args.get('no_end_time'):
-        return
-    share_id = _pos(args['share_id'])
-    raw = _run_cli(['share', 'list-outgoing'])
-    unknown = 'Cannot determine existing share scope/time bounds from outgoing CLI JSONL; no update sent. Inspect the share and use separate operations.'
-    try:
-        rows = [json.loads(line) for line in raw.splitlines() if line.strip()]
-        if any(not isinstance(row, dict) for row in rows):
-            raise ValueError()
-        matches = [row for row in rows if row.get('id') == share_id]
-        if len(matches) != 1:
-            raise ValueError()
-        current = matches[0]
-        types = current['fulcra_data_types']
-        all_data = current['share_all_data']
-        if not isinstance(types, list) or type(all_data) is not bool or any(not isinstance(t, str) for t in types):
-            raise ValueError()
-        if any(not t.startswith(('file:', 'filehistory:')) and not re.fullmatch(DATA_TYPE['pattern'], t) for t in types):
-            raise ValueError()
-        if adds_files:
-            for arg, field in (('start_time', 'time_start'), ('end_time', 'time_end')):
-                if not args.get('no_' + arg):
-                    bounded = bounded or current[field] is not None
-    except (ValueError, KeyError, TypeError):
-        raise ValueError(unknown) from None
-    if args.get('clear'):
-        types, all_data = [], False
-    elif args.get('set_data_types'):
-        types = args['set_data_types']
-    removed = set(args.get('remove_data_types', [])) | {'file:' + p for p in args.get('remove_files', [])}
-    types = [t for t in types if t not in removed]
-    all_data = args.get('share_all', all_data)
-    if bounded and (adds_files or all_data or any(t.startswith(('file:', 'filehistory:')) for t in types)):
-        raise ValueError(conflict)
 
 
 def _share_times(args):
@@ -501,7 +431,7 @@ def _share_times(args):
         raise ValueError("end_time must be after start_time.")
 
 
-@_tool("fulcra_create_share", "Grant read access to explicit data_types/files OR share_all=true, with explicit user_ids/group_ids. Never infer all-data scope. Group access follows current membership, including future joiners. File prefixes share latest versions, not history; '/' covers all files. Missing time bounds are open-ended. Inspect fulcra_list_shares afterward.", {
+@_tool("fulcra_create_share", "Grant read access to explicit data_types/files OR share_all=true, with explicit user_ids/group_ids. Never infer all-data scope. Group access follows current membership, including future joiners. File prefixes share latest versions, not history; '/' covers all files. Time bounds limit accessible time-series data only, never file access, even in file/all-data shares. Missing bounds are open-ended. Inspect fulcra_list_shares afterward.", {
     "name": STRING, "data_types": _array(DATA_TYPE), "files": _array(REMOTE_PATH),
     "user_ids": _array(UUID), "group_ids": _array(UUID), "share_all": BOOLEAN, **SHARE_TIMES})
 def fulcra_create_share(args):
@@ -514,7 +444,6 @@ def fulcra_create_share(args):
     if scoped == bool(args.get("share_all")):
         raise ValueError("Specify explicit data_types/files OR share_all=true, never both or neither.")
     _share_times(args)
-    _share_file_bounds(args)
     command = ["share", "create"] + _options(args, {
         "name": "--name", "data_types": "--data-type", "files": "--file", "user_ids": "--user-id",
         "group_ids": "--group-id", "start_time": "--start-time", "end_time": "--end-time", "share_all": "--share-all"})
@@ -531,10 +460,12 @@ SHARE_UPDATE_FLAGS = {f"{action}_{key}": f"--{action}-{flag}"
                       for action in ("add", "remove", "set")}
 
 
-@_tool("fulcra_update_share", "Change only explicitly supplied share fields. Read fulcra_list_shares outgoing first. set_data_types replaces ALL shared type/file selectors (CLI semantics); set_files replaces file selectors only. clear removes selectors and disables all-data before additions. Empty set lists are rejected; use clear/no_group_ids. Turning on share_all or removing time bounds broadens access. Review recipients and verify afterward.", {
+@_tool("fulcra_update_share", "Change only explicitly supplied share fields. Read fulcra_list_shares outgoing first. set_data_types replaces ALL shared type/file selectors (CLI semantics); set_files replaces file selectors only. clear removes selectors and disables all-data before additions. Use clear/no_group_ids rather than empty set lists. Turning on share_all broadens access. Time bounds and their removal affect accessible time-series data only, never file access, even in file/all-data shares. Review recipients and verify afterward.", {
     "share_id": UUID, "name": STRING, **SHARE_UPDATE_FIELDS, "no_group_ids": BOOLEAN,
-    "share_all": BOOLEAN, **SHARE_TIMES, "no_start_time": BOOLEAN,
-    "no_end_time": BOOLEAN, "clear": BOOLEAN}, ("share_id",))
+    "share_all": BOOLEAN, **SHARE_TIMES,
+    "no_start_time": {**BOOLEAN, "description": "Remove the start bound on accessible time-series data only; never changes file access."},
+    "no_end_time": {**BOOLEAN, "description": "Remove the end bound on accessible time-series data only; never changes file access."},
+    "clear": BOOLEAN}, ("share_id",))
 def fulcra_update_share(args):
     """Apply explicit share changes after checking selector conflicts."""
     if type(args.get("share_all", False)) is not bool:
@@ -554,7 +485,6 @@ def fulcra_update_share(args):
     if args.get("share_all") and any(key in args for key in SHARE_UPDATE_FIELDS if key.endswith(("data_types", "files"))):
         raise ValueError("share_all=true conflicts with explicit selector changes.")
     _share_times(args)
-    _share_file_bounds(args, update=True)
     command = ["share", "update", _pos(args["share_id"])] + _options(args, {
         "name": "--name", **SHARE_UPDATE_FLAGS, "no_group_ids": "--no-group-id",
         "start_time": "--start-time", "end_time": "--end-time", "no_start_time": "--no-start-time",
@@ -684,7 +614,7 @@ def fulcra_file_restore(args):
     return _run_cli(["file", "restore", _pos(args["version_id"])])
 
 
-@_tool("fulcra_file_share", "Grant explicit users access to the latest file versions at a path/prefix using the CLI file share command. Directories include future files; '/' grants all files. No history is granted. For groups use fulcra_create_share with files instead. File shares cannot have time bounds. Verify with fulcra_list_shares outgoing.", {
+@_tool("fulcra_file_share", "Grant explicit users access to the latest file versions at a path/prefix using the CLI file share command. Directories include future files; '/' grants all files. No history is granted. For groups use fulcra_create_share with files instead. Share time bounds limit time-series data only, never file access. Verify with fulcra_list_shares outgoing.", {
     "path": REMOTE_PATH, "user_ids": _array(UUID), "name": STRING}, ("path", "user_ids"))
 def fulcra_file_share(args):
     """Grant explicit users access to a remote file or prefix."""

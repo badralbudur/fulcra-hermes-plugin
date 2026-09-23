@@ -2,7 +2,6 @@
 import datetime
 import importlib.util
 import io
-import json
 from pathlib import Path
 import socket
 import sys
@@ -56,9 +55,9 @@ FulcraAPI.create_tags = lambda self, names: [{"id": ID} for name in names]
 records.get_records = lambda *args, **kwargs: [{"record_id": ID, "value": 2}]
 FulcraAPI.data_updates = lambda self, **kwargs: {"fixture_updates": []}
 FulcraAPI.create_datashare = lambda self, **kwargs: {"id": ID, **{k: str(v) if isinstance(v, datetime.datetime) else v for k, v in kwargs.items()}}
-FulcraAPI.update_datashare = lambda self, **kwargs: {"id": ID, **{k: str(v) if isinstance(v, datetime.datetime) else v for k, v in kwargs.items()}}
+FulcraAPI.update_datashare = lambda self, **kwargs: {"id": ID, **kwargs}
 FulcraAPI.get_datashare = lambda self, *args: {"fulcra_data_types": ["HeartRate"], "permissions": [{"allowed_fulcra_userid": ID}], "group_permissions": []}
-FulcraAPI.get_datashares = lambda self: [{"id": ID, "fulcra_data_types": ["HeartRate"], "share_all_data": False, "time_start": None, "time_end": None}]
+FulcraAPI.get_datashares = lambda self: [{"id": ID}]
 FulcraAPI.get_shared_datasets = lambda self: [{"grant_type": "self"}, {"grant_type": "user", "grant_id": ID}]
 FulcraAPI.delete_datashare = lambda self, *args: None
 FulcraAPI.delete_dataset_permission = lambda self, *args: None
@@ -106,13 +105,7 @@ with patch.object(socket.socket, "connect", side_effect=AssertionError("Network 
     check("fulcra_get_records", {"data_type": DT, "time_range": ["latest"], "user_id": ID})
     check("fulcra_get_records", {"data_type": DT, "time_range": ["2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z"]})
     check("fulcra_data_updates", {"time_range": ["2 days"], "user_id": ID})
-    check("fulcra_create_share", {"name": "Fixture", "data_types": [DT], "files": ["/notes/"], "user_ids": [ID], "group_ids": [ID]})
-    bounded = json.loads(check("fulcra_update_share", {"share_id": ID, "start_time": "2026-01-01T00:00:00Z"}))
-    assert bounded['time_start'].startswith('2026-01-01')
-    with patch.object(FulcraAPI, 'get_datashares', return_value=[{'id': ID, 'fulcra_data_types': ['file:/notes/'], 'share_all_data': False}]):
-        with patch.object(FulcraAPI, 'update_datashare', side_effect=AssertionError('Unsafe update')) as mutation:
-            assert 'time bounds' in tools.fulcra_update_share({'share_id': ID, 'start_time': '2026-01-01T00:00:00Z'})
-            mutation.assert_not_called()
+    check("fulcra_create_share", {"name": "Fixture", "data_types": [DT], "files": ["/notes/"], "user_ids": [ID], "group_ids": [ID], "start_time": "2026-01-01T00:00:00Z"})
     check("fulcra_update_share", {"share_id": ID, "set_data_types": [DT], "set_files": ["/notes/"], "set_user_ids": [ID], "no_group_ids": True, "share_all": False, "no_start_time": True, "no_end_time": True})
     assert '"grant_id": "' + ID + '"' in check("fulcra_list_shares", {"direction": "both"})
     check("fulcra_shared_data_types", {"user_id": ID, "time_range": ["1 week"]})
