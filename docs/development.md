@@ -8,9 +8,10 @@ The default suite needs Python 3.11+ and does not install or import the Fulcra S
 python3 -m unittest discover -s tests -v
 ```
 
-The opt-in integration test downloads the pinned CLI via uv. It tests credential
-loading and refresh persistence using temporary fixtures and a stubbed API
-response, without authenticating or accessing real Fulcra data:
+The opt-in integration tests download the pinned CLI via uv. They test credential
+loading/refresh persistence and execute the expansion through the real Click
+parser and CLI command bodies against fixture APIs. The expansion fixture blocks
+socket connections. Neither test authenticates or accesses real Fulcra data:
 
 ```bash
 FULCRA_CLI_SMOKE=1 python3 -m unittest discover -s tests -v
@@ -19,7 +20,8 @@ FULCRA_CLI_SMOKE=1 python3 -m unittest discover -s tests -v
 Validate the plugin with Hermes:
 
 ```bash
-hermes plugins validate .
+hermes plugins doctor . --ci
+git diff --check
 ```
 
 ## Try a PR
@@ -52,15 +54,17 @@ uv tool run --isolated --no-config --from fulcra-api==0.1.42 fulcra-api catalog
 uv creates and caches the external environment. It may download a compatible
 Python interpreter when needed. The plugin does not install uv itself.
 
-The manifest retains `python_runtime: external` to keep this runtime outside
-Hermes's shared dependency management. The host dependency list is empty; the
-marker documents that boundary and protects it if dependencies are added later.
+The host dependency list is empty. The adapter imports only the standard library
+and Hermes runtime helpers; Fulcra and its dependencies stay in the uv child.
 See [Hermes Python dependencies](https://hermes-agent.nousresearch.com/docs/developer-guide/plugins#python-dependencies).
 
 The adapter uses argument arrays without a shell, closes stdin, and captures
 stdout and stderr separately. Ordinary calls time out after 180 seconds.
 Authentication completion allows 1080 seconds, including a 900-second polling
-window. Catalog JSON Lines are converted to a JSON array.
+window. Tools preserve CLI output, including JSON Lines and whitespace, without
+plugin-imposed size caps or truncation. Combined share listings add direction
+labels; file downloads return full UTF-8 text or save exact local bytes.
+Data-type creation does not expose the optional timeline-preference update.
 
 Settings and the credential-scrubbed child environment are resolved at call time
 through Hermes's profile-aware helpers. Older Hermes versions without
@@ -77,8 +81,8 @@ even if dependencies are cached. It has no offline/cache-only mode.
   OS-user storage, not per-profile or per-Discord-user storage. Separate accounts
   need a follow-up change to the CLI; uv isolation is not a security sandbox.
 - Authentication output is text. The CLI accepts the device code in argv, where
-  local process inspection may expose it. The adapter redacts that code from
-  failure messages and does not log command lines. Structured output and
+  local process inspection may expose it. The adapter returns full CLI failure
+  diagnostics, redacts the device code, and does not log command lines. Structured output and
   stdin-based code input remain CLI follow-ups.
 - The CLI version is pinned, but transitive dependencies are not fully locked.
   Cache eviction can require new downloads and resolution.

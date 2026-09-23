@@ -1,8 +1,9 @@
 # Fulcra Hermes Plugin
 
 Connect [Hermes Agent](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins)
-to Fulcra. This plugin handles sign-in and lists the data types available in your
-Fulcra account. It includes native Hermes tools and a usage skill.
+to Fulcra. This plugin provides sign-in, filtered catalog discovery, data-type
+management, record reads/writes/deletions, scoped sharing, processing updates,
+and file operations. It includes native Hermes tools and a usage skill.
 
 ## Install
 
@@ -33,6 +34,14 @@ Ask Hermes:
 If you aren't signed in, Hermes gives you a verification link and code. Open the
 link, authorize Fulcra, then tell Hermes you've finished. An existing Fulcra CLI
 login can also be reused.
+
+Use `fulcra_data_catalog` to discover IDs, `fulcra_data_type_schema` before writing
+records, and `fulcra_list_shares` before changing access. Mutations require explicit
+targets; sharing requires explicit recipients and scope. Read back changes before
+claiming completion. Tools return CLI output without plugin-imposed size caps.
+
+The bundled [usage skill](skills/context/SKILL.md) explains the available tools.
+Authentication uses `fulcra_auth` and `fulcra_auth_device`.
 
 Credentials live at `~/.config/fulcra/credentials.json` under the host OS account.
 **Hermes profiles and Discord users running under that account share the login.**

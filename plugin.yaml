@@ -3,9 +3,29 @@ version: 1.0.0
 manifest_version: 2
 api_version: 1
 provides_tools:
-  - get_auth_url
-  - submit_device_code
-  - get_data_catalog
+  - fulcra_auth
+  - fulcra_auth_device
+  - fulcra_data_catalog
+  - fulcra_create_data_type
+  - fulcra_data_type_schema
+  - fulcra_data_type_lifecycle
+  - fulcra_record
+  - fulcra_get_records
+  - fulcra_delete_records
+  - fulcra_create_share
+  - fulcra_update_share
+  - fulcra_delete_share
+  - fulcra_leave_share
+  - fulcra_list_shares
+  - fulcra_shared_data_types
+  - fulcra_data_updates
+  - fulcra_file_upload
+  - fulcra_file_download
+  - fulcra_file_list
+  - fulcra_file_stat
+  - fulcra_file_delete
+  - fulcra_file_restore
+  - fulcra_file_share
 description: Fulcra Context tools and resources for Hermes Agent.
 author:
   name: Fulcra Dynamics

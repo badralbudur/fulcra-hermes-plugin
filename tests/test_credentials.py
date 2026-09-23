@@ -16,6 +16,17 @@ from test_tools import load_tools
 
 @unittest.skipUnless(os.environ.get("FULCRA_CLI_SMOKE") == "1", "set FULCRA_CLI_SMOKE=1 for uv integration")
 class CredentialTests(unittest.TestCase):
+    def test_pinned_cli_expansion_against_fixture_api(self):
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as directory:
+            result = subprocess.run(
+                [shutil.which("uv"), "tool", "run", "--isolated", "--no-config", "--from", load_tools().FULCRA_PACKAGE,
+                 "python", str(root / "tests" / "cli_fixture.py"), str(root), directory],
+                capture_output=True, text=True, timeout=180,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        self.assertIn("PASS", result.stdout)
+
     def test_published_cli_loads_and_saves_credentials(self):
         uv = shutil.which("uv")
         self.assertIsNotNone(uv, "uv must be installed for this integration test")
