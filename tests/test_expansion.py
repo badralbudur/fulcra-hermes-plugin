@@ -2,6 +2,8 @@
 import json
 from pathlib import Path
 import tempfile
+import sys
+import types
 import unittest
 from unittest.mock import patch
 from test_tools import load_tools
@@ -13,11 +15,25 @@ DT = "NumericAnnotation/" + ID
 class ExpansionTests(unittest.TestCase):
     def setUp(self):
         self.tools = load_tools()
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        module = types.ModuleType('hermes_constants')
+        module.get_hermes_home = lambda: Path(temporary.name)
+        stub = patch.dict(sys.modules, {'hermes_constants': module})
+        stub.start()
+        self.addCleanup(stub.stop)
+
+    def complete_output(self, result):
+        self.assertIn('[TRUNCATED', result)
+        self.assertLess(len(result.encode('utf-8')), 18000)
+        path = Path(result.split('Complete UTF-8 text: ', 1)[1].split('\n', 1)[0])
+        return path.read_text(encoding='utf-8')
 
     def invoke(self, name, args, output="{}"):
         with patch.object(self.tools, "_run_cli", return_value=output) as run:
             result = getattr(self.tools, name)(args)
         self.assertFalse(result.startswith("Error"), result)
+        run.assert_called_once()
         return result, run.call_args.args[0]
 
     def reject(self, name, cases):
@@ -27,7 +43,7 @@ class ExpansionTests(unittest.TestCase):
                 self.assertTrue(result.startswith("Error"), result)
                 run.assert_not_called()
 
-    def test_read_tools_preserve_complete_cli_output(self):
+    def test_read_tools_bound_preview_and_preserve_complete_artifact(self):
         raw = '\n'.join(json.dumps({"note": "x" * 100}) for _ in range(2100)) + '\n'
         for name, args in (
             ("fulcra_data_catalog", {}),
@@ -39,7 +55,7 @@ class ExpansionTests(unittest.TestCase):
         ):
             with self.subTest(tool=name):
                 result, _ = self.invoke(name, args, raw)
-                self.assertEqual(result, raw)
+                self.assertEqual(self.complete_output(result), raw)
 
     def test_auth_rejects_unknown_arguments_before_cli(self):
         self.reject("fulcra_auth", [{"reset": True}, None])
@@ -50,9 +66,10 @@ class ExpansionTests(unittest.TestCase):
         self.assertIn("--value=-2.5", argv)
         _, argv = self.invoke("fulcra_create_data_type", {"base_type": "NumericAnnotation", "name": "Temperature", "description": "--literal description"})
         self.assertIn("--description=--literal description", argv)
-        for name in ("fulcra_file_delete", "fulcra_file_stat", "fulcra_file_share"):
-            base = {"user_ids": [ID]} if name == "fulcra_file_share" else {}
-            self.reject(name, [{**base, "path": path} for path in ("/notes/../private", "//notes/test", "/notes/./test", "/notes\\test")])
+        _, argv = self.invoke("fulcra_file_stat", {"path": "/notes/../private"})
+        self.assertEqual(argv, ["file", "stat", "/notes/../private"])
+        _, argv = self.invoke("fulcra_create_share", {"files": ["/notes/./test"], "user_ids": [ID]})
+        self.assertIn("/notes/./test", argv)
 
     def test_file_upload_preserves_text_and_local_bytes_without_leaking_temp_files(self):
         seen = []
@@ -77,7 +94,7 @@ class ExpansionTests(unittest.TestCase):
             self.assertTrue(local.exists())
         self.reject("fulcra_file_upload", [
             {"path": "/notes/test.txt"}, {"path": "/notes/test.txt", "content": "x", "local_path": "/tmp/x"},
-            {"path": "--help", "content": "x"}, {"path": "/notes/test.txt", "local_path": "-"},
+            {"path": "/notes/test.txt", "local_path": "-"},
         ])
 
     def test_file_download_returns_text_or_exclusive_local_file(self):
@@ -90,7 +107,7 @@ class ExpansionTests(unittest.TestCase):
             return "Downloaded"
         with patch.object(self.tools, "_run_cli", side_effect=boundary):
             result = self.tools.fulcra_file_download({"path": "/notes/test.txt"})
-        self.assertEqual(result, content)
+        self.assertEqual(self.complete_output(result), content)
         self.assertFalse(seen[-1].exists())
         with tempfile.TemporaryDirectory() as directory:
             local = Path(directory) / "saved.txt"
@@ -130,6 +147,12 @@ class ExpansionTests(unittest.TestCase):
         ])
 
     def test_share_updates_preserve_false_and_reject_conflicts(self):
+        time_flags = ["--start-time", "2026-01-01T00:00:00Z"]
+        for changes, flags in (({}, time_flags),
+                               ({"add_files": ["/notes/"]}, ["--add-file", "/notes/", *time_flags]),
+                               ({"share_all": True}, [*time_flags, "--share-all-data"])):
+            _, argv = self.invoke("fulcra_update_share", {"share_id": ID, "start_time": "2026-01-01T00:00:00Z", **changes})
+            self.assertEqual(argv, ["share", "update", ID, *flags])
         _, argv = self.invoke("fulcra_update_share", {"share_id": ID, "share_all": False, "no_start_time": True, "add_user_ids": [ID], "remove_files": ["/notes/"]})
         self.assertEqual(argv, ["share", "update", ID, "--remove-file", "/notes/", "--add-user-id", ID, "--no-start-time", "--no-share-all-data"])
         self.reject("fulcra_update_share", [

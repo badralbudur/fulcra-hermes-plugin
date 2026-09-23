@@ -34,10 +34,17 @@ description: Use Fulcra tools for catalogs, records, sharing, updates and files.
   `share_all:true` when requested. Group recipients include future members.
 - Updates change supplied fields: `set_data_types` replaces all data/file
   selectors; `set_files` replaces only files. `clear` clears shared selectors and
-  all-data mode; `no_group_ids` clears groups. Removing time bounds broadens access.
+  all-data mode; `no_group_ids` clears groups. Removing time bounds broadens
+  time-series data access only, not file access.
 - Use `fulcra_shared_data_types` before querying another owner's data. Request a
   window strictly inside the grant's bounds. `all_data_types:true` with an empty
   type list means all data is shared. Pass the owner's `user_id` to read tools.
+- Use explicit absolute POSIX remote paths. Root `/` selects all files;
+  the CLI handles remote paths without adapter-specific path validation.
+- Time bounds limit the accessible time range of time-series data types only,
+  never file access. File/all-data shares can carry bounds for data types.
+  The adapter does not fetch outgoing share state before updates; inspect it
+  before changing access.
 - Verify shares after changes. Deleting a share revokes access, not underlying data.
 
 ## Files and results
@@ -46,11 +53,28 @@ description: Use Fulcra tools for catalogs, records, sharing, updates and files.
   version history for `fulcra_file_restore`.
 - Upload literal UTF-8 `content` or an existing absolute `local_path`. Updating a
   remote path creates a new version. Do not upload unrelated files or secrets.
-- Download returns full UTF-8 text, or saves exact bytes to a new `local_path`.
+- Download returns UTF-8 text subject to the result limit below, or saves exact
+  bytes to a new `local_path`.
   Existing local files are not overwritten; binary downloads require a local path.
 - File sharing grants latest-version access to path prefixes, including future
   files; `/` covers all files. Use `fulcra_create_share` for group recipients.
-- CLI output and error diagnostics pass through without plugin size caps or
-  truncation. JSONL remains JSONL; combined share listings add direction labels.
+- Results up to 16,000 UTF-8 bytes are returned unchanged, except for explicit
+  device-code redaction in errors and special timeout output.
+  Larger results return a byte-bounded preview, an explicit truncation notice,
+  and an absolute path to the complete local UTF-8 artifact. Read that file with
+  local file tools, paging as needed; the preview is not a complete dataset or
+  necessarily valid JSONL. Combined share listings add direction labels.
+- Artifacts live in the active Hermes profile's `fulcra-output/` directory
+  (0700), in private 0600 files. They may contain sensitive health data; do not
+  share them or put them in public backups. Retention is manual: files remain
+  until explicitly deleted, with no automatic cleanup. Errors retain exception
+  types and details; only the supplied device code is explicitly redacted.
+  The CLI owns other sanitization, including for saved errors. Successful stderr
+  warnings are discarded; timeout errors omit argv and partial output.
+- Successful auth output is never saved as an artifact. Oversized auth output
+  retains complete URL/code lines or the success message when possible. If usable
+  fields cannot be retained, check auth state before starting another flow.
+  If artifact storage fails, the full result is unavailable; the operation may
+  still have completed, so verify writes before retrying.
 - After a write or timeout, check the relevant read tool before retrying or claiming
   success. Keep summaries concise and grounded in the returned data.
