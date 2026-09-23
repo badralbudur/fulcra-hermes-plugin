@@ -38,6 +38,14 @@ description: Use Fulcra tools for catalogs, records, sharing, updates and files.
 - Use `fulcra_shared_data_types` before querying another owner's data. Request a
   window strictly inside the grant's bounds. `all_data_types:true` with an empty
   type list means all data is shared. Pass the owner's `user_id` to read tools.
+- File selectors must be literal absolute POSIX paths. Root `/` is allowed;
+  relative paths, dot segments, backslashes, double slashes and NUL are rejected.
+- File or all-data scope cannot have time bounds. Updates inspect the outgoing
+  share when needed and fail closed if its effective scope cannot be established.
+  Adding files also checks existing bounds. Remove file/all-data scope (including
+  via `clear`) before adding bounds, or explicitly remove both bounds before
+  adding file scope. Verify each change; these checks are not atomic, so avoid
+  concurrent share edits.
 - Verify shares after changes. Deleting a share revokes access, not underlying data.
 
 ## Files and results

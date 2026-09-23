@@ -41,6 +41,13 @@ targets; sharing requires explicit recipients and scope. Read back changes befor
 claiming completion. Tools return CLI output without plugin-imposed size caps.
 
 The bundled [usage skill](skills/context/SKILL.md) explains the available tools.
+File selectors require literal absolute POSIX paths (root `/` is allowed);
+relative paths, dot segments, backslashes, double slashes and NUL are rejected.
+File/all-data shares cannot have time bounds. Updates that add bounds inspect
+the outgoing share first and fail closed if its scope cannot be established.
+Safe removal/clear transitions are supported; otherwise change scope and bounds
+in separate operations and verify each change. This check is not an atomic lock:
+avoid concurrent share edits.
 Authentication uses `fulcra_auth` and `fulcra_auth_device`.
 
 Credentials live at `~/.config/fulcra/credentials.json` under the host OS account.

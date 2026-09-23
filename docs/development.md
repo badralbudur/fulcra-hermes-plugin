@@ -77,6 +77,16 @@ even if dependencies are cached. It has no offline/cache-only mode.
 
 ## Limitations
 
+Share guards follow pinned `cli/share.py`: `list-outgoing` emits one JSON object
+per line with `id`, `fulcra_data_types` and `share_all_data`. File selectors are
+`file:/prefix` (history selectors are `filehistory:/prefix`). `set_data_types`
+replaces all selectors; `clear` also disables all-data scope; file removals are
+exact selector matches. Bounds-only updates inspect this JSONL, never a guessed
+array/envelope. Missing, malformed or ambiguous scope fails closed. Adding file
+scope also checks existing `time_start`/`time_end` unless both are explicitly
+removed. The CLI has no atomic compare-and-set; verify after changes and avoid
+concurrent edits.
+
 - The CLI owns credentials at `~/.config/fulcra/credentials.json`. This is shared
   OS-user storage, not per-profile or per-Discord-user storage. Separate accounts
   need a follow-up change to the CLI; uv isolation is not a security sandbox.

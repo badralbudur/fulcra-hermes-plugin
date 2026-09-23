@@ -120,8 +120,8 @@ class ExpansionTests(unittest.TestCase):
 
 
     def test_share_creation_requires_explicit_recipients_and_scope(self):
-        _, argv = self.invoke("fulcra_create_share", {"name": "Study", "user_ids": [ID], "group_ids": [ID], "data_types": ["HeartRate"], "files": ["/notes/"], "start_time": "2026-01-01T00:00:00Z"})
-        self.assertEqual(argv, ["share", "create", "--name", "Study", "--data-type", "HeartRate", "--file", "/notes/", "--user-id", ID, "--group-id", ID, "--start-time", "2026-01-01T00:00:00Z"])
+        _, argv = self.invoke("fulcra_create_share", {"name": "Study", "user_ids": [ID], "group_ids": [ID], "data_types": ["HeartRate"], "files": ["/notes/"]})
+        self.assertEqual(argv, ["share", "create", "--name", "Study", "--data-type", "HeartRate", "--file", "/notes/", "--user-id", ID, "--group-id", ID])
         self.reject("fulcra_create_share", [
             {"user_ids": [ID]}, {"data_types": ["HeartRate"]},
             {"user_ids": [ID], "share_all": True, "data_types": ["HeartRate"]},

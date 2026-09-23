@@ -54,9 +54,13 @@ def _tool(name, description, properties, required=()):
                 if not isinstance(args, dict) or args.keys() - properties.keys():
                     raise ValueError("Unknown tool arguments.")
                 if "path" in args:
-                    path = _pos(args["path"])
-                    if not path.startswith("/") or "\\" in path or "//" in path or any(p in (".", "..") for p in path.split("/")):
-                        raise ValueError("Use an explicit absolute remote path without dot segments.")
+                    _remote_path(args["path"])
+                for key in ('files', 'add_files', 'remove_files', 'set_files'):
+                    if key in args:
+                        if not isinstance(args[key], list) or not args[key]:
+                            raise ValueError(f'{key} must be a nonempty list.')
+                        for path in args[key]:
+                            _remote_path(path)
                 return fn(args)
             except Exception as exc:
                 secrets = [args.get("device_code")] if isinstance(args, dict) else []
@@ -336,6 +340,63 @@ REMOTE_PATH = {"type": "string", "pattern": r"^/[^\x00]*$", "description": "Expl
 SHARE_TIMES = {"start_time": STRING, "end_time": STRING}
 
 
+def _remote_path(value):
+    """Require literal absolute POSIX paths without ambiguous segments."""
+    path = _pos(value)
+    if not path.startswith('/') or '\\' in path or '//' in path or any(p in ('.', '..') for p in path.split('/')):
+        raise ValueError('Use an explicit absolute remote path without dot segments, backslashes or double slashes.')
+    return path
+
+
+def _share_file_bounds(args, *, update=False):
+    """Reject time-bounded file/all-data scope using pinned CLI JSONL state."""
+    for key in ('data_types', 'add_data_types', 'remove_data_types', 'set_data_types'):
+        if key in args and (not isinstance(args[key], list) or not args[key] or
+                            any(not isinstance(t, str) or not re.fullmatch(DATA_TYPE['pattern'], t) for t in args[key])):
+            raise ValueError(f'{key} must contain catalog data type IDs; use file selectors for files.')
+    bounded = any(key in args for key in SHARE_TIMES)
+    adds_files = bool(args.get('files') or args.get('add_files') or args.get('set_files') or args.get('share_all'))
+    conflict = 'File/all-data scope cannot have time bounds. Remove file/all-data scope or time bounds in separate operations, then verify.'
+    if bounded and adds_files:
+        raise ValueError(conflict)
+    if not update or (not bounded and not adds_files):
+        return
+    if not bounded and args.get('no_start_time') and args.get('no_end_time'):
+        return
+    share_id = _pos(args['share_id'])
+    raw = _run_cli(['share', 'list-outgoing'])
+    unknown = 'Cannot determine existing share scope/time bounds from outgoing CLI JSONL; no update sent. Inspect the share and use separate operations.'
+    try:
+        rows = [json.loads(line) for line in raw.splitlines() if line.strip()]
+        if any(not isinstance(row, dict) for row in rows):
+            raise ValueError()
+        matches = [row for row in rows if row.get('id') == share_id]
+        if len(matches) != 1:
+            raise ValueError()
+        current = matches[0]
+        types = current['fulcra_data_types']
+        all_data = current['share_all_data']
+        if not isinstance(types, list) or type(all_data) is not bool or any(not isinstance(t, str) for t in types):
+            raise ValueError()
+        if any(not t.startswith(('file:', 'filehistory:')) and not re.fullmatch(DATA_TYPE['pattern'], t) for t in types):
+            raise ValueError()
+        if adds_files:
+            for arg, field in (('start_time', 'time_start'), ('end_time', 'time_end')):
+                if not args.get('no_' + arg):
+                    bounded = bounded or current[field] is not None
+    except (ValueError, KeyError, TypeError):
+        raise ValueError(unknown) from None
+    if args.get('clear'):
+        types, all_data = [], False
+    elif args.get('set_data_types'):
+        types = args['set_data_types']
+    removed = set(args.get('remove_data_types', [])) | {'file:' + p for p in args.get('remove_files', [])}
+    types = [t for t in types if t not in removed]
+    all_data = args.get('share_all', all_data)
+    if bounded and (adds_files or all_data or any(t.startswith(('file:', 'filehistory:')) for t in types)):
+        raise ValueError(conflict)
+
+
 def _share_times(args):
     """Validate share boundaries and conflicting removal flags."""
     for key in SHARE_TIMES:
@@ -360,6 +421,7 @@ def fulcra_create_share(args):
     if scoped == bool(args.get("share_all")):
         raise ValueError("Specify explicit data_types/files OR share_all=true, never both or neither.")
     _share_times(args)
+    _share_file_bounds(args)
     command = ["share", "create"] + _options(args, {
         "name": "--name", "data_types": "--data-type", "files": "--file", "user_ids": "--user-id",
         "group_ids": "--group-id", "start_time": "--start-time", "end_time": "--end-time", "share_all": "--share-all"})
@@ -399,6 +461,7 @@ def fulcra_update_share(args):
     if args.get("share_all") and any(key in args for key in SHARE_UPDATE_FIELDS if key.endswith(("data_types", "files"))):
         raise ValueError("share_all=true conflicts with explicit selector changes.")
     _share_times(args)
+    _share_file_bounds(args, update=True)
     command = ["share", "update", _pos(args["share_id"])] + _options(args, {
         "name": "--name", **SHARE_UPDATE_FLAGS, "no_group_ids": "--no-group-id",
         "start_time": "--start-time", "end_time": "--end-time", "no_start_time": "--no-start-time",
@@ -528,7 +591,7 @@ def fulcra_file_restore(args):
     return _run_cli(["file", "restore", _pos(args["version_id"])])
 
 
-@_tool("fulcra_file_share", "Grant explicit users access to the latest file versions at a path/prefix using the CLI file share command. Directories include future files; '/' grants all files. No history is granted. For groups or time bounds use fulcra_create_share with files instead. Verify with fulcra_list_shares outgoing.", {
+@_tool("fulcra_file_share", "Grant explicit users access to the latest file versions at a path/prefix using the CLI file share command. Directories include future files; '/' grants all files. No history is granted. For groups use fulcra_create_share with files instead. File shares cannot have time bounds. Verify with fulcra_list_shares outgoing.", {
     "path": REMOTE_PATH, "user_ids": _array(UUID), "name": STRING}, ("path", "user_ids"))
 def fulcra_file_share(args):
     """Grant explicit users access to a remote file or prefix."""
