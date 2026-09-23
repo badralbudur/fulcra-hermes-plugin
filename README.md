@@ -38,7 +38,23 @@ login can also be reused.
 Use `fulcra_data_catalog` to discover IDs, `fulcra_data_type_schema` before writing
 records, and `fulcra_list_shares` before changing access. Mutations require explicit
 targets; sharing requires explicit recipients and scope. Read back changes before
-claiming completion. Tools return CLI output without plugin-imposed size caps.
+claiming completion. Small results are unchanged. Results over 16,000 UTF-8 bytes
+return a byte-bounded preview with an explicit truncation notice and an absolute
+path to the complete UTF-8 text. Read that path with local file tools, rather
+than treating the preview as complete JSON or a complete dataset.
+
+Artifacts are private files (0600) in the active Hermes profile's
+`fulcra-output/` directory (0700), resolved at each call. They may contain private
+health data: do not share them or include them in public backups. They remain
+until you explicitly delete them; there is no automatic retention cleanup.
+Successful authentication output is never saved there; oversized auth responses
+retain the URL and complete codes when possible. Errors are sanitized before
+previewing or saving. If storage fails, the tool reports that the full result is
+unavailable; the operation may still have completed, so verify writes before
+retrying. Secure artifact storage requires POSIX descriptor-relative file APIs
+and `O_NOFOLLOW`, not Linux/procfs. The existing checks still require a profile
+path without symlink components; use a canonical physical path (for example,
+macOS `/var` commonly resolves through a symlink to `/private/var`).
 
 The bundled [usage skill](skills/context/SKILL.md) explains the available tools.
 File selectors require literal absolute POSIX paths (root `/` is allowed);

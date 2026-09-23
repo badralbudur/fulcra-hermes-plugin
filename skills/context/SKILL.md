@@ -54,11 +54,25 @@ description: Use Fulcra tools for catalogs, records, sharing, updates and files.
   version history for `fulcra_file_restore`.
 - Upload literal UTF-8 `content` or an existing absolute `local_path`. Updating a
   remote path creates a new version. Do not upload unrelated files or secrets.
-- Download returns full UTF-8 text, or saves exact bytes to a new `local_path`.
+- Download returns UTF-8 text subject to the result limit below, or saves exact
+  bytes to a new `local_path`.
   Existing local files are not overwritten; binary downloads require a local path.
 - File sharing grants latest-version access to path prefixes, including future
   files; `/` covers all files. Use `fulcra_create_share` for group recipients.
-- CLI output and error diagnostics pass through without plugin size caps or
-  truncation. JSONL remains JSONL; combined share listings add direction labels.
+- Results up to 16,000 UTF-8 bytes are returned unchanged (errors are sanitized).
+  Larger results return a byte-bounded preview, an explicit truncation notice,
+  and an absolute path to the complete local UTF-8 artifact. Read that file with
+  local file tools, paging as needed; the preview is not a complete dataset or
+  necessarily valid JSONL. Combined share listings add direction labels.
+- Artifacts live in the active Hermes profile's `fulcra-output/` directory
+  (0700), in private 0600 files. They may contain sensitive health data; do not
+  share them or put them in public backups. Retention is manual: files remain
+  until explicitly deleted, with no automatic cleanup. Error sanitization is
+  credential-focused, not general PII removal or a guarantee for arbitrary secrets.
+- Successful auth output is never saved as an artifact. Oversized auth output
+  retains complete URL/code lines or the success message when possible. If usable
+  fields cannot be retained, check auth state before starting another flow.
+  If artifact storage fails, the full result is unavailable; the operation may
+  still have completed, so verify writes before retrying.
 - After a write or timeout, check the relevant read tool before retrying or claiming
   success. Keep summaries concise and grounded in the returned data.

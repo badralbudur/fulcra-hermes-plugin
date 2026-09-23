@@ -3,10 +3,12 @@
 import json
 import os
 import re
+import stat
 import shutil
 import subprocess
 import functools
 import math
+import secrets
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +17,7 @@ from pathlib import Path
 TOOL_SCHEMAS = {}
 STRING = {"type": "string", "minLength": 1}
 BOOLEAN = {"type": "boolean"}
+OUTPUT_PREVIEW_BYTES = 16000
 
 UUID_PATTERN = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 UUID = {"type": "string", "pattern": "^" + UUID_PATTERN + "$"}
@@ -61,10 +64,12 @@ def _tool(name, description, properties, required=()):
                             raise ValueError(f'{key} must be a nonempty list.')
                         for path in args[key]:
                             _remote_path(path)
-                return fn(args)
+                output = fn(args)
             except Exception as exc:
                 secrets = [args.get("device_code")] if isinstance(args, dict) else []
-                return _error_text(exc, secrets)
+                output = _error_text(exc, secrets)
+                return _bounded_output(output)
+            return _bounded_output(output, auth=name in ('fulcra_auth', 'fulcra_auth_device'))
         return wrapped
     return decorate
 
@@ -94,6 +99,94 @@ def _error_text(exc, secrets=()):
         return ('Error: TimeoutExpired: Fulcra CLI timed out; outcome is uncertain. '
                 'For writes, verify the resulting state before retrying.')
     return _sanitize(f'Error: {type(exc).__name__}: {exc}', secrets)
+
+
+def _artifact_directory():
+    """Open the active profile's private output directory without symlinks."""
+    from hermes_constants import get_hermes_home
+
+    home = Path(get_hermes_home())
+    if not home.is_absolute() or '..' in home.parts:
+        raise ValueError('Hermes home must be an absolute path without dot segments.')
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    fd = os.open(home.anchor, flags)
+    try:
+        for part in home.parts[1:]:
+            child = os.open(part, flags, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        try:
+            os.mkdir('fulcra-output', mode=0o700, dir_fd=fd)
+        except FileExistsError:
+            pass
+        child = os.open('fulcra-output', flags, dir_fd=fd)
+        os.close(fd)
+        fd = child
+        info = os.fstat(fd)
+        if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+            raise PermissionError('fulcra-output must be owned by the current user with mode 0700.')
+        return home / 'fulcra-output', fd
+    except Exception:
+        os.close(fd)
+        raise
+
+
+def _save_output(data):
+    """Exclusively store complete UTF-8 bytes through a pinned directory FD."""
+    directory, directory_fd = _artifact_directory()
+    filename = None
+    try:
+        for _ in range(100):
+            candidate = f'result-{secrets.token_hex(16)}.txt'
+            try:
+                fd = os.open(candidate, os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                             0o600, dir_fd=directory_fd)
+            except FileExistsError:
+                continue
+            filename = candidate
+            break
+        else:
+            raise FileExistsError('Could not allocate a unique output artifact.')
+        with os.fdopen(fd, 'wb') as stream:
+            os.fchmod(stream.fileno(), 0o600)
+            stream.write(data)
+        path = directory / filename
+        if directory.is_symlink() or not os.path.samestat(directory.stat(), os.fstat(directory_fd)):
+            raise OSError('Output directory changed while saving.')
+        return path
+    except Exception:
+        if filename is not None:
+            os.unlink(filename, dir_fd=directory_fd)
+        raise
+    finally:
+        os.close(directory_fd)
+
+
+def _bounded_output(output, *, auth=False):
+    """Bound final results once, preserving complete data in private artifacts."""
+    data = output.encode('utf-8')
+    if len(data) <= OUTPUT_PREVIEW_BYTES:
+        return output
+    if auth:
+        # Keep complete device-flow fields even when they follow large warnings.
+        fields = '\n'.join(line for line in output.splitlines()
+                           if line.startswith(('Web auth URL:', '- Web auth code:', '- Device code:', 'Authorization successful', '✅ Authorization successful!')))
+        notice = '\n[TRUNCATED: oversized authentication output not persisted for credential privacy.]'
+        usable = all(label in fields for label in ('Web auth URL:', '- Web auth code:', '- Device code:')) or 'Authorization successful' in fields
+        if usable and len(fields.encode('utf-8')) <= OUTPUT_PREVIEW_BYTES:
+            return fields + notice
+        return ('Error: Oversized authentication response; usable auth fields could not be retained. '
+                'Check authentication state before starting another flow.' + notice)
+    preview = data[:OUTPUT_PREVIEW_BYTES].decode('utf-8', errors='ignore')
+    try:
+        path = _save_output(data)
+    except Exception as exc:
+        detail = _error_text(exc).encode('utf-8')[:1000].decode('utf-8', errors='ignore')
+        return ('Error: Could not save complete output artifact; full result unavailable. '
+                'The operation may have completed; verify writes before retrying.\n' + detail +
+                '\n[TRUNCATED: output preview only; no complete artifact.]\n' + preview)
+    return (preview + f'\n[TRUNCATED: showing at most {OUTPUT_PREVIEW_BYTES} of {len(data)} UTF-8 bytes.]\n'
+            f'Complete UTF-8 text: {path}\nRead this local file with file tools for the complete result.')
 
 
 def _options(args, mapping):
@@ -539,7 +632,7 @@ def fulcra_file_upload(args):
     return raw
 
 
-@_tool("fulcra_file_download", "Download the latest remote file version. With local_path, save exact bytes to a new absolute local file without overwriting. Otherwise return the full UTF-8 text. Binary files require local_path; user_id selects a shared owner.", {
+@_tool("fulcra_file_download", "Download the latest remote file version. With local_path, save exact bytes to a new absolute local file without overwriting. Otherwise return UTF-8 text, with a bounded preview and complete local artifact for large results. Binary files require local_path; user_id selects a shared owner.", {
     "path": REMOTE_PATH, "local_path": STRING, "user_id": UUID}, ("path",))
 def fulcra_file_download(args):
     """Download exact bytes exclusively or return decoded UTF-8 text."""

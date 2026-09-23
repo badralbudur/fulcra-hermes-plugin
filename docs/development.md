@@ -61,10 +61,37 @@ See [Hermes Python dependencies](https://hermes-agent.nousresearch.com/docs/deve
 The adapter uses argument arrays without a shell, closes stdin, and captures
 stdout and stderr separately. Ordinary calls time out after 180 seconds.
 Authentication completion allows 1080 seconds, including a 900-second polling
-window. Tools preserve CLI output, including JSON Lines and whitespace, without
-plugin-imposed size caps or truncation. Combined share listings add direction
-labels; file downloads return full UTF-8 text or save exact local bytes.
+window. Final tool results preserve JSON Lines and whitespace up to 16,000
+UTF-8 bytes. Larger results return a code-point-safe byte preview, an explicit
+truncation notice and the absolute path of the complete UTF-8 artifact. Bounding
+happens only at the handler boundary, after combined share listings are labeled
+and text downloads are decoded; internal CLI reads remain complete. Explicit
+local file downloads still save exact bytes without overwriting.
 Data-type creation does not expose the optional timeline-preference update.
+
+Artifacts use `get_hermes_home()` at call time and live in `fulcra-output/` under
+that profile. The implementation rejects symlink components, opens directories
+with `O_NOFOLLOW`, and requires an owned 0700 output directory. Random basenames
+from `secrets.token_hex` are created with `os.open(O_CREAT|O_EXCL|O_WRONLY, 0600)`
+relative to the pinned directory descriptor, retrying collisions without
+overwriting existing files. Directory identity is checked after writing;
+failed writes are removed through the pinned descriptor.
+This requires POSIX descriptor-relative file APIs and `O_NOFOLLOW`, not procfs.
+The ancestor-symlink policy is unchanged: use a canonical physical profile path,
+including on macOS where `/var` commonly links to `/private/var`. Unsupported
+hosts or unsafe/unwritable paths get a bounded storage error, not false success.
+Complete results are captured in memory before storage; this is a context-size
+limit, not a subprocess memory or disk quota.
+
+Artifacts persist until manually deleted. They can contain sensitive health data
+and should not be shared or publicly backed up. There is no automatic cleanup.
+Only sanitized errors are persisted. Successful auth output is never persisted;
+oversized responses retain the pinned CLI's complete URL/code lines or success
+message, or report that usable fields could not be retained. Auth codes still
+appear in the tool conversation as required for the device flow. Sanitization
+is credential-focused, not general PII removal or a guarantee for arbitrary
+unlabeled/encoded secrets. Storage errors warn that the operation may already
+have completed and writes must be verified before retrying.
 
 Settings and the credential-scrubbed child environment are resolved at call time
 through Hermes's profile-aware helpers. Older Hermes versions without

@@ -33,7 +33,7 @@ class AdapterTests(unittest.TestCase):
         modules.start()
         self.addCleanup(modules.stop)
 
-    def test_auth_unexpected_errors_are_safe_and_output_is_complete(self):
+    def test_auth_unexpected_errors_are_safe_and_large_output_is_not_persisted(self):
         tools = load_tools()
         for handler, args in ((tools.fulcra_auth, {}), (tools.fulcra_auth_device, {"device_code": "fixture"})):
             with patch.object(tools, "_run_cli", side_effect=OSError("password=private-secret")):
@@ -42,7 +42,8 @@ class AdapterTests(unittest.TestCase):
             self.assertTrue(result.startswith("Error"))
             with patch.object(tools, "_run_cli", return_value="x" * 40000):
                 result = handler(args)
-            self.assertTrue(result.startswith("x" * 40000))
+            self.assertLess(len(result.encode('utf-8')), 18000)
+            self.assertIn('not persisted', result)
 
     def test_empty_read_streams_and_silent_mutation_are_successful(self):
         tools = load_tools()

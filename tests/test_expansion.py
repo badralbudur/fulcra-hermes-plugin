@@ -2,6 +2,8 @@
 import json
 from pathlib import Path
 import tempfile
+import sys
+import types
 import unittest
 from unittest.mock import patch
 from test_tools import load_tools
@@ -13,6 +15,19 @@ DT = "NumericAnnotation/" + ID
 class ExpansionTests(unittest.TestCase):
     def setUp(self):
         self.tools = load_tools()
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        module = types.ModuleType('hermes_constants')
+        module.get_hermes_home = lambda: Path(temporary.name)
+        stub = patch.dict(sys.modules, {'hermes_constants': module})
+        stub.start()
+        self.addCleanup(stub.stop)
+
+    def complete_output(self, result):
+        self.assertIn('[TRUNCATED', result)
+        self.assertLess(len(result.encode('utf-8')), 18000)
+        path = Path(result.split('Complete UTF-8 text: ', 1)[1].split('\n', 1)[0])
+        return path.read_text(encoding='utf-8')
 
     def invoke(self, name, args, output="{}"):
         with patch.object(self.tools, "_run_cli", return_value=output) as run:
@@ -27,7 +42,7 @@ class ExpansionTests(unittest.TestCase):
                 self.assertTrue(result.startswith("Error"), result)
                 run.assert_not_called()
 
-    def test_read_tools_preserve_complete_cli_output(self):
+    def test_read_tools_bound_preview_and_preserve_complete_artifact(self):
         raw = '\n'.join(json.dumps({"note": "x" * 100}) for _ in range(2100)) + '\n'
         for name, args in (
             ("fulcra_data_catalog", {}),
@@ -39,7 +54,7 @@ class ExpansionTests(unittest.TestCase):
         ):
             with self.subTest(tool=name):
                 result, _ = self.invoke(name, args, raw)
-                self.assertEqual(result, raw)
+                self.assertEqual(self.complete_output(result), raw)
 
     def test_auth_rejects_unknown_arguments_before_cli(self):
         self.reject("fulcra_auth", [{"reset": True}, None])
@@ -90,7 +105,7 @@ class ExpansionTests(unittest.TestCase):
             return "Downloaded"
         with patch.object(self.tools, "_run_cli", side_effect=boundary):
             result = self.tools.fulcra_file_download({"path": "/notes/test.txt"})
-        self.assertEqual(result, content)
+        self.assertEqual(self.complete_output(result), content)
         self.assertFalse(seen[-1].exists())
         with tempfile.TemporaryDirectory() as directory:
             local = Path(directory) / "saved.txt"
