@@ -60,8 +60,8 @@ path without symlink components; use a canonical physical path (for example,
 macOS `/var` commonly resolves through a symlink to `/private/var`).
 
 The bundled [usage skill](skills/context/SKILL.md) explains the available tools.
-File selectors require literal absolute POSIX paths (root `/` is allowed);
-relative paths, dot segments, backslashes, double slashes and NUL are rejected.
+Use explicit absolute POSIX remote paths (root `/` selects all files).
+Remote paths are passed through to the CLI without custom path validation.
 Time bounds limit the accessible time range of time-series data types only,
 never file access. File/all-data shares can carry bounds for their data types.
 The adapter does not fetch outgoing share state before updates; inspect shares

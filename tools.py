@@ -55,12 +55,6 @@ def _tool(name, description, properties, required=()):
             try:
                 if not isinstance(args, dict) or args.keys() - properties.keys():
                     raise ValueError("Unknown tool arguments.")
-                if "path" in args:
-                    _remote_path(args["path"])
-                for key in ('files', 'add_files', 'remove_files', 'set_files'):
-                    if key in args:
-                        for path in args[key]:
-                            _remote_path(path)
                 output = fn(args)
             except Exception as exc:
                 device_code = args.get("device_code") if isinstance(args, dict) else None
@@ -410,14 +404,6 @@ SHARE_TIMES = {
     "start_time": {**STRING, "description": "ISO8601 timestamp with timezone. Limits the start of accessible time-series data only, never file access, including in file/all-data shares."},
     "end_time": {**STRING, "description": "ISO8601 timestamp with timezone. Limits the end of accessible time-series data only, never file access, including in file/all-data shares."},
 }
-
-
-def _remote_path(value):
-    """Require literal absolute POSIX paths without ambiguous segments."""
-    path = _pos(value)
-    if not path.startswith('/') or '\\' in path or '//' in path or any(p in ('.', '..') for p in path.split('/')):
-        raise ValueError('Use an explicit absolute remote path without dot segments, backslashes or double slashes.')
-    return path
 
 
 def _share_times(args):

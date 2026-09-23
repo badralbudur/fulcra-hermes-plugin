@@ -39,8 +39,8 @@ description: Use Fulcra tools for catalogs, records, sharing, updates and files.
 - Use `fulcra_shared_data_types` before querying another owner's data. Request a
   window strictly inside the grant's bounds. `all_data_types:true` with an empty
   type list means all data is shared. Pass the owner's `user_id` to read tools.
-- File selectors must be literal absolute POSIX paths. Root `/` is allowed;
-  relative paths, dot segments, backslashes, double slashes and NUL are rejected.
+- Use explicit absolute POSIX remote paths. Root `/` selects all files;
+  the CLI handles remote paths without adapter-specific path validation.
 - Time bounds limit the accessible time range of time-series data types only,
   never file access. File/all-data shares can carry bounds for data types.
   The adapter does not fetch outgoing share state before updates; inspect it

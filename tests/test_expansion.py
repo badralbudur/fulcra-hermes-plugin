@@ -66,9 +66,10 @@ class ExpansionTests(unittest.TestCase):
         self.assertIn("--value=-2.5", argv)
         _, argv = self.invoke("fulcra_create_data_type", {"base_type": "NumericAnnotation", "name": "Temperature", "description": "--literal description"})
         self.assertIn("--description=--literal description", argv)
-        for name in ("fulcra_file_delete", "fulcra_file_stat", "fulcra_file_share"):
-            base = {"user_ids": [ID]} if name == "fulcra_file_share" else {}
-            self.reject(name, [{**base, "path": path} for path in ("/notes/../private", "//notes/test", "/notes/./test", "/notes\\test")])
+        _, argv = self.invoke("fulcra_file_stat", {"path": "/notes/../private"})
+        self.assertEqual(argv, ["file", "stat", "/notes/../private"])
+        _, argv = self.invoke("fulcra_create_share", {"files": ["/notes/./test"], "user_ids": [ID]})
+        self.assertIn("/notes/./test", argv)
 
     def test_file_upload_preserves_text_and_local_bytes_without_leaking_temp_files(self):
         seen = []
@@ -93,7 +94,7 @@ class ExpansionTests(unittest.TestCase):
             self.assertTrue(local.exists())
         self.reject("fulcra_file_upload", [
             {"path": "/notes/test.txt"}, {"path": "/notes/test.txt", "content": "x", "local_path": "/tmp/x"},
-            {"path": "--help", "content": "x"}, {"path": "/notes/test.txt", "local_path": "-"},
+            {"path": "/notes/test.txt", "local_path": "-"},
         ])
 
     def test_file_download_returns_text_or_exclusive_local_file(self):
