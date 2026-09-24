@@ -170,13 +170,14 @@ class Updates:
         except Exception as exc:
             return 'Error: ' + str(exc)
 
-    def pre(self, session_id='', parent_session_id='', **kwargs):
+    def pre(self, session_id='', parent_session_id='', platform='', **kwargs):
         """Offer the profile's shared digest once to the next eligible session."""
         if not session_id:
             return
         with _lock(self.ctx):
             scope = (str(self.ctx.state.path), FEED_KEY)
-            if parent_session_id:
+            if parent_session_id or platform == 'cron':
+                # Their writes are new to the user, not already-known activity.
                 self.active.discard((scope[0], session_id))
                 return
             self.active.add((scope[0], session_id))

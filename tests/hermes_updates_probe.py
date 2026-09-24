@@ -56,8 +56,8 @@ def main():
             assert not result.startswith('Error:'), result
             return json.loads(result)
 
-        def pre(session='same-chat', parent=''):
-            agent = SimpleNamespace(session_id=session, model='fixture', platform='cli',
+        def pre(session='same-chat', parent='', platform='cli'):
+            agent = SimpleNamespace(session_id=session, model='fixture', platform=platform,
                                     _parent_session_id=parent, _user_id='fixture')
             history = [{'role': 'system', 'content': 'unchanged'}, {'role': 'user', 'content': 'old task'}]
             before = copy.deepcopy(history)
@@ -113,6 +113,11 @@ def main():
             assert seen == ['a', 'b'], seen
             for name in ('a', 'b', 'a'):
                 with scope(name):
+                    assert not pre('scheduled', platform='cron')
+                    invoke_hook('post_tool_call', session_id='scheduled', tool_name='fulcra_record',
+                                args={'data_type': name + '-type'}, result='Submitted', status='ok')
+                    invoke_hook('post_llm_call', session_id='scheduled', platform='cron')
+                    finish()
                     text = pre('new-chat')  # New sessions inherit the profile feed.
                     if name == 'a' and seen.count('delivered-a'):
                         assert not text
@@ -131,7 +136,7 @@ def main():
         for manager in managers.values():
             manager.unload()
         print('PASS: real PluginContext/PluginState, config readback, hook dispatch, current-user context, '
-              'A→B→A isolation, cross-session single delivery, copied worker/runtime scope, child exclusion, disable; network blocked.')
+              'A→B→A isolation, cross-session single delivery, copied worker/runtime scope, cron/child exclusion, cron writes remain visible, disable; network blocked.')
 
 
 if __name__ == '__main__':

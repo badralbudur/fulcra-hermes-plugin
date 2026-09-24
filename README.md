@@ -113,7 +113,7 @@ Consent is **profile-wide, not a per-user authorization boundary**. Enable only
 in profiles whose chats/users you trust with the same OS-user Fulcra account.
 One profile-level cursor, digest, deduplication history and known-write buffer
 are shared across chats. The next eligible top-level conversation consumes the
-pending digest once; delegated child turns do not poll or receive notices.
+pending digest once; cron and delegated child turns do not poll or receive notices.
 Only first use or disable/re-enable establishes a current-time baseline.
 Starting a new session keeps the existing cursor and pending activity.
 After changing the shared Fulcra login, disable/re-enable updates before resuming
@@ -128,7 +128,10 @@ silent when updates are irrelevant; routine ingestion counts are not events or
 medical findings. The plugin never reads full file contents or calls another LLM.
 
 Successful native uploads/deletes/restores and record writes/deletions are treated
-as already known across that profile. Suppression horizons cover at least one hour
+as already known across that profile only when made in eligible conversations.
+Cron and subagent writes remain eligible as new data for the user; they do not
+create known-write suppression markers. Other top-level automation is not yet
+distinguished from user conversations. Suppression horizons cover at least one hour
 or the configured interval, whichever is longer at write time. Markers survive
 idle gaps until a successful fetch advances the cursor past their horizon.
 File change timestamps, not fetch wall time, are compared with that horizon;

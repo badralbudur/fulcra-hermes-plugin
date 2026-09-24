@@ -141,7 +141,11 @@ is imported into Hermes. Current Hermes with `ctx.state` is required.
   only on first use/reset, and consume its shared digest once through `{context: text}`. Hermes
   appends it to the **current user message**; history/system prompts are untouched.
   Post hooks have no sender ID, so eligibility comes from pre, not a global last
-  sender. Unknown sessions and delegated children cannot trigger a fetch.
+  sender. Unknown sessions, cron turns (`platform='cron'`) and delegated children
+  cannot trigger a fetch or consume the digest. Pre removes their eligibility,
+  so their successful tool writes also cannot create known-write markers: newly
+  collected cron/subagent data remains available for the user's next conversation.
+  This is not a complete automation classifier; other top-level contexts remain eligible.
 - A due post hook launches one daemon worker per profile, with a shared cooldown
   across sessions. The worker uses
   `contextvars.copy_context()` so active-home, secret and runtime environment

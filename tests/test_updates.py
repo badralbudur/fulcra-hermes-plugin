@@ -261,13 +261,27 @@ class UpdateTests(unittest.TestCase):
         self.enable()
         self.pre('child', parent_session_id='chat'); self.post('child')
         self.post('unseen')
+        self.pre('scheduled')  # A cron turn must clear any previous eligibility.
+        self.files = [self.file('third-party')]
         self.poll()
-        self.assertIn('Steps', self.pre('other')['context'])
+        self.assertIsNone(self.pre('scheduled', platform='cron'))
+        self.ctx.hooks['post_tool_call'](
+            session_id='scheduled', tool_name='fulcra_file_upload',
+            args={'path': '/notes/third-party'}, result='Uploaded', status='ok')
+        self.ctx.hooks['post_tool_call'](
+            session_id='child', tool_name='fulcra_record',
+            args={'data_type': 'Steps'}, result='Submitted', status='ok')
+        self.now += 61
+        self.post('scheduled'); self.finish()
+        self.assertEqual(len(self.calls), 1)
+        text = self.pre('other')['context']
+        self.assertIn('Steps', text)
+        self.assertIn('/notes/third-party', text)
         self.assertIsNone(self.pre())  # Offered once across all profile sessions.
         self.post('other'); self.finish()
-        self.assertEqual(len(self.calls), 1)  # Shared cooldown, not per-session.
-        self.now += 61
-        self.post('other'); self.finish()
+        self.assertEqual(len(self.calls), 2)
+        self.post(); self.finish()
+        self.assertEqual(len(self.calls), 2)  # Shared cooldown, not per-session.
         self.assertEqual(self.calls[0][0][2], self.calls[1][0][1])
         token = self.ctx.state.profile.set('b')
         self.assertIsNone(self.pre()); self.post()
