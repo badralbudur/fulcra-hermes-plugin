@@ -1,7 +1,7 @@
 """Fulcra Context plugin for Hermes Agent."""
 
 from pathlib import Path
-from . import tools, updates
+from . import tools, updates, workspace
 
 
 def register(ctx):
@@ -9,6 +9,7 @@ def register(ctx):
     for name, schema in tools.TOOL_SCHEMAS.items():
         ctx.register_tool(name=name, toolset="context", schema=schema, handler=getattr(tools, name))
 
+    workspace.register(ctx)
     updates.register(ctx)
     skills_dir = Path(__file__).parent / "skills"
     if skills_dir.exists():

@@ -32,6 +32,20 @@ provides_hooks:
   - post_llm_call
   - post_tool_call
 config_schema:
+  workspace_context_enabled:
+    type: boolean
+    default: false
+    description: Initialize and read workspace context at session start in trusted profile chats.
+  workspace_name:
+    type: string
+    default: general
+    pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
+    description: 'Workspace namespace: one stable path segment, not a session ID.'
+  workspace_role:
+    type: string
+    default: assistant
+    pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
+    description: Durable responsibility under member/, shared by successive humans or agents.
   updates_enabled:
     type: boolean
     default: false

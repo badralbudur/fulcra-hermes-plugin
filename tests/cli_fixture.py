@@ -24,6 +24,8 @@ tools = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tools)
 
 calls = []
+real_file_methods = {name: getattr(FulcraAPI, name) for name in
+                     ('resolve_filepath', 'upload_file', 'download_file')}
 
 
 def entry(data_type=DT):
@@ -119,3 +121,5 @@ with patch.object(socket.socket, "connect", side_effect=AssertionError("Network 
     check("fulcra_file_restore", {"version_id": ID})
     check("fulcra_file_share", {"path": "/notes/", "user_ids": [ID], "name": "Notes"})
 print(f"Pinned CLI expansion fixtures: PASS ({len(operations)} command invocations; networking blocked)")
+from workspace_cli_fixture import run
+run(runner, cli, real_file_methods)

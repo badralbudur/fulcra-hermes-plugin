@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from test_updates import load_plugin
+from test_workspace import FileStore
 
 
 def main():
@@ -35,8 +36,9 @@ def main():
         seen = []
         contexts = {}
         managers = {}
+        stores = {'a': FileStore(), 'b': FileStore()}
         manifest = yaml.safe_load((Path(__file__).resolve().parents[1] / 'plugin.yaml').read_text())
-        assert manifest['config_schema'] == plugin.updates.SETTINGS
+        assert manifest['config_schema'] == {**plugin.updates.SETTINGS, **plugin.workspace.SETTINGS}
 
         @contextmanager
         def scope(name):
@@ -56,25 +58,28 @@ def main():
             assert not result.startswith('Error:'), result
             return json.loads(result)
 
-        def pre(session='same-chat', parent='', platform='cli'):
+        def pre(session='same-chat', parent='', platform='cli', first=False):
             agent = SimpleNamespace(session_id=session, model='fixture', platform=platform,
                                     _parent_session_id=parent, _user_id='fixture')
             history = [{'role': 'system', 'content': 'unchanged'}, {'role': 'user', 'content': 'old task'}]
             before = copy.deepcopy(history)
             text = _collect_pre_llm_call_context(agent, effective_task_id='task', turn_id='turn',
                                                 original_user_message='current task', messages=history,
-                                                conversation_history=history)
+                                                conversation_history=[] if first else history)
             assert history == before
             if text:
                 assert compose_user_api_content('current task', '', text) == 'current task\n\n' + text
             return text
 
         def cli(argv, timeout):
-            assert timeout == 30
             home = get_hermes_home()
             allowed, env = plugin.tools._runtime_context()  # Real profile-aware runtime resolution.
             assert allowed and env['HERMES_HOME'] == str(home)
             assert get_secret('FULCRA_PROBE_SECRET') == home.name
+            if argv[0] == 'file':
+                assert 0 < timeout <= 25
+                return stores[home.name](argv, timeout)
+            assert timeout == 30
             seen.append(home.name)
             return json.dumps(dict(start_time=argv[1], end_time=argv[2],
                                    data_types={home.name + '-type': 1}, file_changes=[]))
@@ -133,10 +138,39 @@ def main():
                 invoke_hook('post_llm_call', session_id='same-chat', platform='cli', conversation_history=[])
                 finish()
                 assert len(seen) == 4
+            for name in ('a', 'b', 'a'):
+                with scope(name) as home:
+                    ctx = contexts[name]
+                    # Intentional standard config writes, isolated to disposable homes.
+                    ctx.set_config('workspace_name', 'work-' + name)
+                    ctx.set_config('workspace_role', 'researcher')
+                    ctx.set_config('workspace_context_enabled', True)
+                    saved = yaml.safe_load((home / 'config.yaml').read_text())
+                    assert saved['plugins']['entries']['context']['settings']['workspace_name'] == 'work-' + name
+                    count = len(stores[name].calls)
+                    assert not pre('workspace-cron', platform='cron', first=True)
+                    assert not pre('workspace-child', parent='parent', first=True)
+                    assert not pre('workspace-ordinary')
+                    text = pre('workspace-chat', first=True)
+                    if count:
+                        assert not text and len(stores[name].calls) == count
+                    else:
+                        assert 'user-owned reference' in text and 'researcher' in text
+                        assert 'missing seeds verified' in text
+                        assert all(path.startswith('/workspace/work-' + name + '/') for path in stores[name].files)
+                        path = '/workspace/work-' + name + '/knowledge/user-preferences.md'
+                        stores[name].files[path] = '---\ntype: Reference\n---\nPrivate preference ' + name
+                        text = pre('workspace-new', first=True)
+                        assert 'Private preference ' + name in text
+                        assert 'Private preference ' + ('b' if name == 'a' else 'a') not in text
+                    assert not any(path.exists() for path in stores[name].locals)
+                    ctx.set_config('workspace_context_enabled', False)
+                    assert not pre('workspace-disabled', first=True)
         for manager in managers.values():
             manager.unload()
         print('PASS: real PluginContext/PluginState, config readback, hook dispatch, current-user context, '
-              'A→B→A isolation, cross-session single delivery, copied worker/runtime scope, cron/child exclusion, cron writes remain visible, disable; network blocked.')
+              'A→B→A isolation, cross-session single delivery, copied worker/runtime scope, cron/child exclusion, cron writes remain visible, disable; '
+              'workspace startup/current-user injection and update-hook coexistence, config readback, durable role reuse, no overwrite or persistent staging; network blocked.')
 
 
 if __name__ == '__main__':

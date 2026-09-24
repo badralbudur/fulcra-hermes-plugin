@@ -44,7 +44,7 @@ as described in the [README](../README.md#troubleshooting).
 
 ## Runtime
 
-`__init__.py` registers the tools and bundled skill without importing the SDK or
+`__init__.py` registers the tools, hooks and bundled skills without importing the SDK or
 starting a subprocess. `tools.py` invokes **fulcra-api==0.1.42** through `uv tool run`:
 
 ```bash
@@ -127,6 +127,64 @@ Inspect shares before changing access and verify afterward.
   stdin-based code input remain CLI follow-ups.
 - The CLI version is pinned, but transitive dependencies are not fully locked.
   Cache eviction can require new downloads and resolution.
+
+## Workspace startup
+
+`workspace.py` registers a separate `pre_llm_call` alongside the existing update
+hook. Three manifest settings (also in `workspace.SETTINGS`) are read via
+`ctx.get_config` at call time; standard Hermes config UI/CLI suffices. There is
+no new tool or registration-time settings write. Load the bundled
+[`workspace` skill](../skills/workspace/SKILL.md) for durable role and OKF rules.
+It adapts the pinned fulcra-workspaces reference rather than depending on mesh.
+
+- Eligible callbacks require `is_first_turn is True`, a session ID, no parent,
+  and platform other than cron. An in-memory `(ctx.state.path, session_id)` marker
+  suppresses repeated first-turn work. No downloaded content or completion cache
+  is persisted; restarting the process permits another checked startup.
+- A profile/workspace process lock serializes bootstrap across sessions. Read
+  each explicit seed path, then re-read a confirmed missing path before upload.
+  Only the exact pinned error `Fulcra CLI exited with status 1: Error: File not
+  found in Fulcra: {path}` means absent. All other failures disable further
+  seeding in that startup, while independent readable context is retained.
+  Download after upload must match the seed before reporting files/readback checked,
+  never full index completion. Track seeded paths within this startup and report
+  index/log reconciliation pending after any seeding, including a new durable role.
+  Existing indexes/logs are untouched; newly seeded ones are skeletal, including
+  in existing workspaces. The bundled skill directs authorized read/merge/upload/verify
+  of links and major milestones, never replacement with templates. No automatic
+  markdown merger or persisted reconciliation state.
+- All CLI operations use `tools._run_cli` and the remaining portion of one
+  monotonic 25-second deadline, including lock wait. Timeouts stop work, without
+  retrying uncertain mutations. Local staging uses a private temporary directory
+  cleaned up on exit. CLI stdout is an acknowledgement, never file content.
+  This is not a disk quota: the CLI downloads a full file before bounded reading.
+- Only the six relevant role/progress/preference/context documents are injected,
+  with full remote source paths, up to 1,100 content characters each and 1,400
+  serialized characters per file.
+  Total context remains under 10,000 characters, including status and untrusted
+  reference guidance. Unknown types/metadata are retained as data, not rejected.
+  No linked content, inboxes, tasks or unrelated files are auto-read/executed.
+- Seeds declare required OKF `type` except reserved index/log files. The root
+  index declares `okf_version: "0.2"`; session/artifact directories are only
+  linked conventions until files are intentionally created there. No local
+  MEMORY changes, auth flows, shares, cron, or unrelated uploads.
+- The CLI offers no conditional create. External processes and profiles sharing
+  the OS account can race between re-read and upload; this is not a distributed
+  lock. Partial setup may require several sessions on a slow connection or cold
+  uv cache. Startup writes are not native tool callbacks and may appear in a
+  later background-update digest; the usual relevance guidance still applies.
+
+Five workspace unit workflows cover cold/readback, warm reuse (including a second
+role, byte-preserved root index/log and pending reconciliation), no-I/O gates,
+partial/error/timeout handling and profile/config/prompt isolation. The existing
+`FULCRA_CLI_SMOKE=1` fixture also runs `workspace_cli_fixture.py`: real pinned
+Click commands and core resolve/upload/download methods against a fake HTTP
+file store, temporary credentials and blocked sockets (including HTTP 403 vs
+exact missing-path behavior). No real account is contacted.
+
+The real-Hermes probe below now also exercises workspace configuration,
+first-turn current-user injection, update-hook coexistence, durable-role reuse,
+A → B → A isolation, no registration writes, and temporary staging cleanup.
 
 ## Background update hooks
 

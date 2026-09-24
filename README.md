@@ -3,7 +3,8 @@
 Connect [Hermes Agent](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins)
 to Fulcra. This plugin provides sign-in, filtered catalog discovery, data-type
 management, record reads/writes/deletions, scoped sharing, processing updates,
-and file operations. It includes native Hermes tools and a usage skill.
+and file operations. It includes native Hermes tools, usage guidance and a
+bundled [durable workspace skill](skills/workspace/SKILL.md).
 
 ## Install
 
@@ -72,6 +73,60 @@ Credentials live at `~/.config/fulcra/credentials.json` under the host OS accoun
 **Hermes profiles and Discord users running under that account share the login.**
 Use this plugin only with trusted users; its isolated Python runtime does not
 isolate accounts.
+
+## Durable workspace (opt-in startup)
+
+Ask Hermes to use your workspace; it defaults to `/workspace/general` with the
+stable `assistant` role at `member/assistant/`. No setup questionnaire or role
+confirmation is required. Existing files are authoritative. Humans or agents
+can succeed to a role without losing its progress and knowledge.
+
+To automatically initialize missing templates and load relevant context on new
+sessions, use the standard Hermes config UI or CLI in the intended profile:
+
+```bash
+hermes config set plugins.entries.context.settings.workspace_context_enabled true
+```
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `workspace_context_enabled` | `false` | Missing-only setup and first-turn context in trusted profile chats. |
+| `workspace_name` | `general` | Stable workspace namespace. |
+| `workspace_role` | `assistant` | Stable responsibility, not a model/session ID. |
+
+Names are single ASCII alphanumeric/hyphen/underscore segments, 1–64 characters,
+starting alphanumeric. Set name/role before enabling if you want different
+defaults. These controls are independent of `updates_enabled`. Set enabled to
+`false` to stop future startup work; this does not delete remote files or prior
+conversation context. Registration never writes configuration.
+
+Startup reads workspace and member role/progress plus
+`knowledge/user-preferences.md` and `knowledge/fulcra-context.md`. Missing seeds
+are minimal OKF v0.2 documents with empty preference/context guidance, not
+invented user facts. It preserves existing content, verifies uploads by download,
+and does not interpret auth/network failures as missing files. Success means files
+and seed readback checked, not complete indexing. Any seeding leaves index/log
+reconciliation pending: a new role does not update existing root links or logs;
+seeded missing indexes/logs are skeletal, not an inventory of existing content.
+Use the bundled skill's authorized read/merge/upload/verify workflow for links,
+major milestones and routine updates; never replace existing indexes/logs with templates.
+
+The hook adds bounded, untrusted reference text to the current user message;
+history/system prompts are unchanged. It runs once per process/profile/session
+on `is_first_turn`, never on ordinary turns, cron or subagents. One 25-second
+budget covers lock wait and all CLI calls; excerpts total under 10,000 characters.
+Partial setup is reported honestly and may continue in a later session. No
+recursive link traversal or auxiliary LLM calls. Temporary downloaded content is
+cleaned up; injected excerpts can still be retained in conversation history.
+
+Enabling this is profile-wide consent to those reads and missing-template writes,
+not unrelated uploads, artifact publication, sharing, cross-account transfers,
+authentication, inbox/cron setup or local MEMORY changes. The shared OS Fulcra
+login still applies: enable only for trusted chats. Different profiles using the
+same workspace name access the same remote files. Same-process/profile setup is
+serialized, but the CLI has no conditional create; coordinate external concurrent
+setup to avoid a re-read/upload race. See the [workspace skill](skills/workspace/SKILL.md)
+for layout, session/task conventions and privacy boundaries.
 
 ## Background updates (opt-in)
 
