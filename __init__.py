@@ -1,7 +1,7 @@
 """Fulcra Context plugin for Hermes Agent."""
 
 from pathlib import Path
-from . import tools, updates, workspace
+from . import mesh, tools, updates, workspace
 
 
 def register(ctx):
@@ -11,6 +11,9 @@ def register(ctx):
 
     workspace.register(ctx)
     updates.register(ctx)
+    ctx.register_tool(name="fulcra_mesh", toolset="context", schema=mesh.SCHEMA,
+                      handler=mesh.make_handler(ctx.state))
+
     skills_dir = Path(__file__).parent / "skills"
     if skills_dir.exists():
         for child in sorted(skills_dir.iterdir()):

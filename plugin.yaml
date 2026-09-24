@@ -3,6 +3,7 @@ version: 1.0.0
 manifest_version: 2
 api_version: 1
 provides_tools:
+  - fulcra_mesh
   - fulcra_auth
   - fulcra_auth_device
   - fulcra_data_catalog
