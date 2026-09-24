@@ -104,6 +104,45 @@ indexes are not supported.
 When `security.allow_lazy_installs` is false, the adapter refuses to launch uv,
 even if dependencies are cached. It has no offline/cache-only mode.
 
+## Mesh implementation
+
+`mesh.py` registers one `fulcra_mesh` handler bound to `ctx.state`. It shares the
+existing CLI, private record staging, and bounded-output helpers. No host SDK,
+hooks, schedules, or LLM calls. A process-local lock covers connection changes
+and receive commits; metadata keys include the current account and agent/peer
+identity. Oversized output persistence precedes receive cursor commits; small
+inline responses are not saved as files or guaranteed as a durable inbox.
+
+Six mesh workflows cover handoff-only onboarding, consent/adoption/reuse,
+pending-creation recovery, partial sharing, envelope/send outcomes,
+receive filtering/dedup, parse/artifact failures, and account separation. The
+opt-in CLI fixture also exercises real pinned Click bodies and SDK share/upload
+request construction with temporary credentials and blocked socket connections.
+Mesh restores the original `fulcra_api.records.get_records` dispatcher before
+running: event catalog entries must route to the real v1alpha1 event endpoint,
+with owner scope only for peer reads. Only its transport response is intercepted,
+not the dispatcher. An invalid `moment_annotation` type fails this fixture.
+Fixtures use `user-info.userid`, nested create-share `datashare`, outgoing `id`,
+incoming `sharing_fulcra_userid`, and JSONL record streams. The SDK routes a
+dedicated annotation write to base `MomentAnnotation` ingestion with its UUID
+annotation source; the note remains a JSON string and validation stays enabled.
+
+See [mesh protocol and limits](mesh.md) for the pinned reference, exact cursor
+window/dedup limits, state recovery, and why invite is separate from send.
+
+The standalone real-Hermes probe uses temporary profile homes and blocked
+networking, without installing a plugin or changing configuration. Run with the
+Hermes virtualenv and its source on `PYTHONPATH`, for example:
+
+```bash
+PYTHONPATH=/path/to/hermes-agent /path/to/hermes-agent/venv/bin/python tests/mesh_hermes_probe.py
+```
+
+It verifies A→B→A registration/state reload, stable handoff markers, explicit
+adoption, group provenance, bounded dedup, private metadata, and no files for
+small inline responses. The CLI fixture uses a minimal mesh-relevant schema
+projection; it is not a captured full production catalog or live-account test.
+
 ## Limitations
 
 Share time bounds limit the accessible time range of time-series data types
