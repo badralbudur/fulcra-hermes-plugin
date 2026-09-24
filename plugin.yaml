@@ -35,7 +35,7 @@ config_schema:
   workspace_context_enabled:
     type: boolean
     default: false
-    description: Initialize and read workspace context at session start in trusted profile chats.
+    description: Initialize/read workspace context in trusted chats; unset offers once then saves false.
   workspace_name:
     type: string
     default: general

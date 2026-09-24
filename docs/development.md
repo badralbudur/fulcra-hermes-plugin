@@ -137,8 +137,15 @@ no new tool or registration-time settings write. Load the bundled
 [`workspace` skill](../skills/workspace/SKILL.md) for durable role and OKF rules.
 It adapts the pinned fulcra-workspaces reference rather than depending on mesh.
 
-- Eligible callbacks require `is_first_turn is True`, a session ID, no parent,
-  and platform other than cron. An in-memory `(ctx.state.path, session_id)` marker
+- The offer requires a session ID, no parent, and platform other than cron.
+  `ctx.get_config` uses an absence sentinel, independent of the manifest's false
+  default. When absent, the hook persists `false` via `ctx.set_config` and returns
+  a brief opt-in instruction; no Fulcra I/O occurs. Explicit false stays silent.
+  A process lock prevents simultaneous hook offers; persisted false suppresses
+  later sessions/restarts. Other profiles get their own offer. This records an
+  offered question, not confirmed delivery or user refusal.
+- Enabled file loading additionally requires `is_first_turn is True`.
+  An in-memory `(ctx.state.path, session_id)` marker
   suppresses repeated first-turn work. No downloaded content or completion cache
   is persisted; restarting the process permits another checked startup.
 - A profile/workspace process lock serializes bootstrap across sessions. Read
@@ -182,8 +189,9 @@ Click commands and core resolve/upload/download methods against a fake HTTP
 file store, temporary credentials and blocked sockets (including HTTP 403 vs
 exact missing-path behavior). No real account is contacted.
 
-The real-Hermes probe below now also exercises workspace configuration,
-first-turn current-user injection, update-hook coexistence, durable-role reuse,
+The real-Hermes probe below now also exercises absent-setting opt-in and durable
+false readback without remote I/O, workspace configuration, first-turn current-user
+injection, update-hook coexistence, durable-role reuse,
 A → B → A isolation, no registration writes, and temporary staging cleanup.
 
 ## Background update hooks

@@ -121,11 +121,22 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual({p: self.store.files[p].encode() for p in bookkeeping}, before)
 
     def test_ineligible_callbacks_and_disabled_have_no_io(self):
-        for args in ({'is_first_turn': False}, {'platform': 'cron'}, {'parent_session_id': 'parent'}):
+        self.ctx.config.clear()  # Absent is different from explicitly disabled.
+        for args in ({'platform': 'cron'}, {'parent_session_id': 'parent'}):
             self.assertIsNone(self.pre('chat', **args))
         self.assertIsNone(self.pre(''))
+        self.assertEqual(self.ctx.config, {})
+        offered = self.pre(is_first_turn=False)
+        self.assertIsNotNone(offered)
+        self.assertIn('ask the user', offered['context'])
+        self.assertIs(self.ctx.get_config('workspace_context_enabled'), False)
+        self.assertIsNone(self.pre('another-session'))
+        restarted = self.plugin.workspace.Workspace(self.ctx)
+        self.assertIsNone(restarted.pre(is_first_turn=True, session_id='restarted'))
         self.ctx.set_config('workspace_context_enabled', False)
         self.assertIsNone(self.pre())
+        self.ctx.set_config('workspace_context_enabled', True)
+        self.assertIsNone(self.pre(is_first_turn=False))
         self.assertEqual(self.store.calls, [])
         self.assertEqual(self.ctx.state.values, {})
 
@@ -198,7 +209,8 @@ class WorkspaceTests(unittest.TestCase):
         self.assertIn('"truncated": true', text)
         self.assertLess(len(text), 10000)
         token = self.ctx.state.profile.set('b')
-        self.assertIsNone(self.pre())  # Same session ID, disabled in B.
+        self.assertIn('ask the user', self.pre()['context'])  # Independent opt-in in B.
+        self.assertIs(self.ctx.get_config('workspace_context_enabled'), False)
         self.ctx.set_config('workspace_context_enabled', True)
         self.assertIn('missing seeds verified', self.pre()['context'])
         self.assertIn('/workspace/general/member/assistant/role.md', self.store.files)

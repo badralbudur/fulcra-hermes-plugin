@@ -39,6 +39,13 @@ The plugin's opt-in first-turn hook reads settings under
 - `workspace_name`: general by default.
 - `workspace_role`: assistant by default.
 
+When the setting is absent, the plugin injects a one-time instruction to briefly
+ask about enabling it, then leaves it explicitly false to prevent repeat offers.
+The offer makes no Fulcra requests and can appear on any eligible non-cron,
+non-subagent turn. Saved false is not evidence the user declined. Enable only
+after agreement; startup loading begins on a future eligible first turn.
+If false was explicitly configured already, do not ask again automatically.
+
 Names are one segment, 1–64 ASCII alphanumeric/hyphen/underscore characters,
 starting alphanumeric. Choose the namespace/role before enabling if not using
 defaults. Run config commands through the Hermes terminal tool, for example:

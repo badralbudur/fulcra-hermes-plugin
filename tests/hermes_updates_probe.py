@@ -108,8 +108,16 @@ def main():
                     assert ctx.get_config('updates_enabled') is True
                     assert ctx.get_config('update_interval') == 60
                     assert yaml.safe_load((home / 'config.yaml').read_text())['plugins']['entries']['context']['settings']['updates_enabled'] is True
-                    assert not pre()
+                    unset = object()
+                    assert ctx.get_config('workspace_context_enabled', unset) is unset
+                    assert not pre('offer-cron', platform='cron', first=True)
                     assert not pre('child', 'same-chat')
+                    assert ctx.get_config('workspace_context_enabled', unset) is unset
+                    assert 'ask the user' in pre()
+                    saved = yaml.safe_load((home / 'config.yaml').read_text())
+                    assert saved['plugins']['entries']['context']['settings']['workspace_context_enabled'] is False
+                    assert not stores[name].calls  # Offering never accesses Fulcra files.
+                    assert not pre('already-offered', first=True)
                     invoke_hook('post_llm_call', session_id='child', platform='cli', conversation_history=[])
                     now[0] += 61
                     invoke_hook('post_llm_call', session_id='same-chat', platform='cli', conversation_history=[])
@@ -170,7 +178,7 @@ def main():
             manager.unload()
         print('PASS: real PluginContext/PluginState, config readback, hook dispatch, current-user context, '
               'A→B→A isolation, cross-session single delivery, copied worker/runtime scope, cron/child exclusion, cron writes remain visible, disable; '
-              'workspace startup/current-user injection and update-hook coexistence, config readback, durable role reuse, no overwrite or persistent staging; network blocked.')
+              'workspace one-time opt-in/config readback, startup/current-user injection and update-hook coexistence, durable role reuse, no overwrite or persistent staging; network blocked.')
 
 
 if __name__ == '__main__':

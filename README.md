@@ -81,8 +81,15 @@ stable `assistant` role at `member/assistant/`. No setup questionnaire or role
 confirmation is required. Existing files are authoritative. Humans or agents
 can succeed to a role without losing its progress and knowledge.
 
-To automatically initialize missing templates and load relevant context on new
-sessions, use the standard Hermes config UI or CLI in the intended profile:
+If `workspace_context_enabled` is absent, the next eligible conversation turn
+receives a brief invitation to opt in. The hook saves `false` before returning
+that invitation so later turns, sessions and restarts do not repeat it. This is
+an offer, not a recorded user refusal, and makes no Fulcra requests. Explicit
+`false` stays silent; `true` enables startup. Cron/subagent turns do not consume
+the offer. Asking is prompt guidance, not a guaranteed delivered question.
+
+After agreeing, enable automatic missing-template setup and context loading at
+future session starts through the standard Hermes config UI or CLI:
 
 ```bash
 hermes config set plugins.entries.context.settings.workspace_context_enabled true
@@ -90,7 +97,7 @@ hermes config set plugins.entries.context.settings.workspace_context_enabled tru
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `workspace_context_enabled` | `false` | Missing-only setup and first-turn context in trusted profile chats. |
+| `workspace_context_enabled` | `false` | Unset: offer once and save false. True: missing-only setup and first-turn context. |
 | `workspace_name` | `general` | Stable workspace namespace. |
 | `workspace_role` | `assistant` | Stable responsibility, not a model/session ID. |
 
@@ -112,8 +119,10 @@ Use the bundled skill's authorized read/merge/upload/verify workflow for links,
 major milestones and routine updates; never replace existing indexes/logs with templates.
 
 The hook adds bounded, untrusted reference text to the current user message;
-history/system prompts are unchanged. It runs once per process/profile/session
-on `is_first_turn`, never on ordinary turns, cron or subagents. One 25-second
+history/system prompts are unchanged. Workspace file loading runs once per
+process/profile/session on `is_first_turn`, never on ordinary turns, cron or
+subagents. The one-time opt-in offer can occur on an ordinary eligible turn.
+One 25-second
 budget covers lock wait and all CLI calls; excerpts total under 10,000 characters.
 Partial setup is reported honestly and may continue in a later session. No
 recursive link traversal or auxiliary LLM calls. Temporary downloaded content is
