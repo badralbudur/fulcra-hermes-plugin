@@ -73,6 +73,79 @@ Credentials live at `~/.config/fulcra/credentials.json` under the host OS accoun
 Use this plugin only with trusted users; its isolated Python runtime does not
 isolate accounts.
 
+## Background updates (opt-in)
+
+Ask Hermes to enable background Fulcra updates and specify your interests, for
+example: “Check for new Fulcra data every 15 minutes; only mention my Mood data
+and files under /notes/, ignoring /notes/drafts/.” Discover exact data type IDs
+with the catalog first. Hermes uses `fulcra_configure_updates`, which persists
+settings through `ctx.set_config`. Calling it with `{}` reads current settings.
+The interval is seconds, e.g. `ctx.set_config("update_interval", 900)`.
+
+Example tool arguments:
+
+```json
+{"updates_enabled": true, "update_interval": 900,
+ "updates_data_types": ["Mood"], "updates_include_files": true,
+ "updates_file_prefixes": ["/notes/"],
+ "updates_ignore_prefixes": ["/notes/drafts/"]}
+```
+
+All settings are declared in the manifest and live under
+`plugins.entries.context.settings` in the active profile:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `updates_enabled` | `false` | Explicit profile-wide consent; use `false` to stop. |
+| `update_interval` | `900` | Minimum check interval, integer 60–86400 seconds. |
+| `updates_data_types` | `[]` | Exact type allowlist; empty means **all**, not none. |
+| `updates_include_files` | `true` | Include file changes. |
+| `updates_file_prefixes` | `[]` | Literal path-prefix allowlist; empty means all files. |
+| `updates_ignore_prefixes` | `[]` | Literal file prefixes to ignore; exclusions win. |
+
+Prefixes are case-sensitive text matches, not globs or path normalization. Use a
+trailing slash to select a directory rather than similarly named siblings.
+Settings are read at call time; no restart is needed. Invalid settings are rejected
+by the tool; invalid externally edited settings make hooks fail closed.
+Filter expansion is forward-only: previously filtered windows are not replayed.
+
+Consent is **profile-wide, not a per-user authorization boundary**. Enable only
+in profiles whose chats/users you trust with the same OS-user Fulcra account.
+Notification state and consumption are separate for each chat/session; delegated
+child turns do not poll or receive notices. New sessions start at the current
+time, not with historical data. Disabling and re-enabling through the tool resets
+the baseline on each session's next active turn.
+After changing the shared Fulcra login, disable/re-enable updates before resuming
+chats to reset cursors and discard old-account digests. Coordination is within a
+single process; do not run multiple Hermes processes for the same profile/session.
+
+After a turn finishes, a due check runs on a daemon worker with a 30-second CLI
+timeout. There is no timer and **no checking while idle**. A completed digest is
+offered to the model on a later turn, not guaranteed delivered to the user or sent
+as a separate message. The model may stay
+silent when updates are irrelevant; routine ingestion counts are not events or
+medical findings. The plugin never reads full file contents or calls another LLM.
+
+Successful native uploads/deletes/restores and record writes/deletions are treated
+as already known in that session. Suppression horizons cover at least one hour
+or the configured interval, whichever is longer at write time. Markers survive
+idle gaps until a successful fetch advances the cursor past their horizon.
+File change timestamps, not fetch wall time, are compared with that horizon;
+path identity follows the CLI's POSIX rules without changing tool inputs.
+Record counts (and files without change timestamps) use window-start time as a
+best-effort fallback. This can hide unrelated same-path/type changes, especially
+counts in a long window. Changes timestamped beyond the horizon remain eligible;
+ingestion arriving after the cursor has passed it may echo. Terminal writes,
+other chats, and facts learned outside these tools are not recognized. Failed
+writes (including CLI `Error:` text) never suppress notices.
+
+Cursors, a bounded metadata digest, deduplication hashes and recent-write markers
+persist in private `ctx.state` storage under the profile's `plugin-data/` directory.
+They can contain sensitive paths and type IDs: do not share or publicly back them
+up. Disabling blocks future fetches/injection and discards in-flight results; an
+already-running CLI call may finish. It does not erase previously stored metadata.
+See [development limitations](docs/development.md#background-update-hooks).
+
 ## Troubleshooting
 
 - **Tools missing:** check that the plugin is enabled and start a fresh session.

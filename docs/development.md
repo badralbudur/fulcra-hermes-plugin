@@ -127,5 +127,91 @@ Inspect shares before changing access and verify afterward.
   stdin-based code input remain CLI follow-ups.
 - The CLI version is pinned, but transitive dependencies are not fully locked.
   Cache eviction can require new downloads and resolution.
-- No hooks are added by this plugin. Future hooks can use the adapter, but avoid
-  cold-start installation or long auth polling inside latency-sensitive callbacks.
+
+## Background update hooks
+
+`updates.py` registers `pre_llm_call`, `post_llm_call`, `post_tool_call` and
+`fulcra_configure_updates`. Registration performs no network or persistent writes.
+The six settings and defaults are documented in the README and declared in
+`plugin.yaml`; tool writes go through `ctx.set_config`, including
+`ctx.set_config("update_interval", 900)` in seconds. No SDK or new dependency
+is imported into Hermes. Current Hermes with `ctx.state` is required.
+
+- Pre hooks record eligible top-level sessions, establish a current-time baseline,
+  and consume that session's cached digest once through `{context: text}`. Hermes
+  appends it to the **current user message**; history/system prompts are untouched.
+  Post hooks have no sender ID, so eligibility comes from pre, not a global last
+  sender. Unknown sessions and delegated children cannot trigger a fetch.
+- A due post hook launches one daemon worker per profile/session. The worker uses
+  `contextvars.copy_context()` so active-home, secret and runtime environment
+  resolution survive the thread hop. Hooks never join or await it. There is no
+  polling timer: idle means no checks; a later turn gets the cached result.
+- Polling calls `tools._run_cli(['data-updates', startISO, endISO], timeout=30)`
+  directly, not the bounded agent-facing tool. The pinned 0.1.42 CLI emits an
+  object containing `start_time`, `end_time`, `data_types: {id: count}` and
+  `file_changes: [metadata]`. The SDK defines `[start, end)` processing windows.
+  The echoed window and complete response shape are validated before cursor
+  advancement. Failures retain the exact attempted window and retry after the
+  configured cooldown, including across restarts. No auth flow is launched.
+- State keys hash the session ID. An enablement epoch invalidates old session
+  queues and in-flight results after disable/re-enable through the tool. Direct
+  config edits are observed on the next hook/worker completion; toggling off and
+  on entirely between observations cannot be detected. Disabling does not kill an
+  already-running CLI subprocess or erase state.
+- One per-profile lock covers the plugin's state read/modify/write operations.
+  Network work is outside it. Completion re-reads state rather than overwriting
+  a snapshot, preserving intervening known-write markers and digest consumption.
+  This is **single-process coordination**, not a cross-process session lease:
+  avoid running two Hermes processes against the same profile/session.
+- File metadata uses public OpenAPI `RecentFileChange.full_name`, passed through
+  unchanged by SDK/CLI (not a directory/name pair). Version fingerprints include
+  `id`, `state`, `uploaded_at`, `archived_at` and `deleted_at`. Scan metadata and
+  size are not user-change identities. Keep the last 256 fingerprints
+  and at most 32 pending metadata items; coalesce data-type counts. Delivery
+  reapplies current interests and known-write suppression and returns at most
+  eight short items, under 3000 characters, with processing-window end times.
+  Oversized items and overflow are omitted, not queued indefinitely. Consumed
+  means offered to the model, not necessarily mentioned to the user. There is no
+  acknowledgement/retry after model failure, nor a complete change-feed guarantee.
+  Filter expansion is forward-only; filtered windows are not replayed.
+- Successful native writes suppress exact file paths/version IDs or data types
+  with a horizon of write time plus max(3600, update_interval) seconds in the
+  originating session. Suppression alone uses `PurePosixPath('/', path)`, matching
+  CLI `make_filepath`; tool inputs are neither rewritten nor newly rejected.
+  Restore creates a new version; the
+  pinned CLI's restore result supplies the original path for suppression.
+  `status=ok` is insufficient if the handler returned `Error:`. A small
+  `changed_at` event field uses the latest upload/archive/delete timestamp;
+  absent timestamps and coarse type counts use window start as best effort.
+  Filter pending and fetched events against marker horizons before retiring
+  markers whose horizon the successful cursor has passed, never by fetch wall
+  time. Thus returning after idle does not itself expire known-write suppression.
+  Later timestamps remain eligible, but ingestion after marker retirement may
+  echo. Record counts cannot identify individual records; unrelated same-type
+  changes in a long overlapping window may be hidden, as can same-path changes
+  within the horizon. Other paths/types remain eligible. This is deliberately
+  a heuristic, not conversation NLP or terminal command parsing.
+- After changing the shared OS Fulcra account, disable/re-enable via the tool
+  before resuming chats to reset cursors and old-account digests. Consent is
+  profile-wide and only appropriate for trusted chats/users.
+- Prompt metadata is labeled untrusted, never treated as instructions. Guidance
+  allows silence, forbids task interruption and medical inference, and requires
+  relevance rather than reciting routine sync counts. No file contents or
+  auxiliary LLM calls are fetched/stored. State has Hermes's quota but no session
+  retention cleanup; metadata persists until explicitly removed. Raw CLI output
+  is held in memory during validation, not persisted or logged.
+
+The six focused unit workflows exercise registered hooks at a fake CLI boundary.
+For real Hermes configuration/state and hook dispatch, run this standalone probe
+with Hermes's existing interpreter (no host dependency installation):
+
+```bash
+/path/to/hermes-agent/venv/bin/python tests/hermes_updates_probe.py /path/to/hermes-agent
+```
+
+The probe requires `TMPDIR` to point to a writable scratch directory. It creates
+and removes isolated temporary homes, blocks socket connections, uses the real
+registered configuration tool and lifecycle dispatcher, checks current-user
+context composition, and switches A → B → A under multiplexing. Its worker also
+executes the real `_runtime_context()` to verify profile/secret propagation.
+It never authenticates or contacts Fulcra, and never loads installed user plugins.
