@@ -82,9 +82,7 @@ def _stamp(value):
     return parsed.timestamp()
 
 
-def _key(session_id):
-    """Keep arbitrary session IDs out of state keys."""
-    return 'updates-' + hashlib.sha256(session_id.encode()).hexdigest()
+FEED_KEY = 'updates-feed'
 
 
 def _control(ctx, settings):
@@ -96,7 +94,8 @@ def _control(ctx, settings):
     return control
 
 
-def _session(ctx, key, control, now):
+def _profile_state(ctx, key, control, now):
+    """Initialize the shared feed only on first use or an enablement reset."""
     state = ctx.state.get(key, {})
     if state.get('epoch') != control.get('epoch') or 'cursor' not in state:
         state = {'epoch': control['epoch'], 'cursor': _iso(now), 'last_attempt': now,
@@ -172,21 +171,21 @@ class Updates:
             return 'Error: ' + str(exc)
 
     def pre(self, session_id='', parent_session_id='', **kwargs):
-        """Offer cached context once, only to its originating top-level session."""
+        """Offer the profile's shared digest once to the next eligible session."""
         if not session_id:
             return
         with _lock(self.ctx):
-            scope = (str(self.ctx.state.path), _key(session_id))
+            scope = (str(self.ctx.state.path), FEED_KEY)
             if parent_session_id:
-                self.active.discard(scope)
+                self.active.discard((scope[0], session_id))
                 return
-            self.active.add(scope)
+            self.active.add((scope[0], session_id))
             settings = _settings(self.ctx)
             control = _control(self.ctx, settings)
             if not settings['updates_enabled']:
                 return
             now = time.time()
-            state = _session(self.ctx, scope[1], control, now)
+            state = _profile_state(self.ctx, scope[1], control, now)
             events = [e for e in state['pending'] if _selected(e, settings, state['known'])]
             state['pending'] = []
             self.ctx.state.set(scope[1], state)
@@ -207,15 +206,15 @@ class Updates:
         if not session_id:
             return
         with _lock(self.ctx):
-            scope = (str(self.ctx.state.path), _key(session_id))
-            if scope not in self.active or scope in self.inflight:
+            scope = (str(self.ctx.state.path), FEED_KEY)
+            if (scope[0], session_id) not in self.active or scope in self.inflight:
                 return
             settings = _settings(self.ctx)
             control = _control(self.ctx, settings)
             if not settings['updates_enabled']:
                 return
             now = time.time()
-            state = _session(self.ctx, scope[1], control, now)
+            state = _profile_state(self.ctx, scope[1], control, now)
             if now - state['last_attempt'] < settings['update_interval']:
                 return
             state['last_attempt'] = now
@@ -286,15 +285,15 @@ class Updates:
         if not isinstance(value, str) or not value:
             return
         with _lock(self.ctx):
-            scope = (str(self.ctx.state.path), _key(session_id))
-            if scope not in self.active:
+            scope = (str(self.ctx.state.path), FEED_KEY)
+            if (scope[0], session_id) not in self.active:
                 return
             settings = _settings(self.ctx)
             control = _control(self.ctx, settings)
             if not settings['updates_enabled']:
                 return
             now = time.time()
-            state = _session(self.ctx, scope[1], control, now)
+            state = _profile_state(self.ctx, scope[1], control, now)
             horizon = now + max(SUPPRESSION_SECONDS, settings['update_interval'])
             if prefix == 'path:':
                 value = str(PurePosixPath('/', value))

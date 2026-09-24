@@ -214,7 +214,7 @@ class UpdateTests(unittest.TestCase):
         self.assertIn('archived', text)  # Same path, but beyond the marker horizon.
         self.assertNotIn('/notes/deleted', text)
         self.assertNotIn('Steps', text)
-        state = self.ctx.state.get(self.plugin.updates._key('chat'))
+        state = self.ctx.state.get(self.plugin.updates.FEED_KEY)
         assert state is not None
         self.assertEqual(state['known'], {})  # Cursor has now passed the horizons.
         self.types = {}
@@ -236,10 +236,10 @@ class UpdateTests(unittest.TestCase):
             self.now += 61
             self.post()
             self.assertTrue(started.wait(1))
-            self.post()
+            self.pre('other'); self.post('other')
             self.assertIsNone(self.pre())
             self.assertEqual(run.call_count, 1)
-            self.ctx.hooks['post_tool_call'](session_id='chat', tool_name='fulcra_file_upload',
+            self.ctx.hooks['post_tool_call'](session_id='other', tool_name='fulcra_file_upload',
                                            args={'path': '/notes/own'}, result='Uploaded', status='ok')
             release.set(); self.finish()
         self.assertIsNone(self.pre())
@@ -262,7 +262,13 @@ class UpdateTests(unittest.TestCase):
         self.pre('child', parent_session_id='chat'); self.post('child')
         self.post('unseen')
         self.poll()
-        self.assertIsNone(self.pre('other'))
+        self.assertIn('Steps', self.pre('other')['context'])
+        self.assertIsNone(self.pre())  # Offered once across all profile sessions.
+        self.post('other'); self.finish()
+        self.assertEqual(len(self.calls), 1)  # Shared cooldown, not per-session.
+        self.now += 61
+        self.post('other'); self.finish()
+        self.assertEqual(self.calls[0][0][2], self.calls[1][0][1])
         token = self.ctx.state.profile.set('b')
         self.assertIsNone(self.pre()); self.post()
         self.enable(); self.poll()
@@ -270,7 +276,7 @@ class UpdateTests(unittest.TestCase):
         self.assertIn('Steps', self.pre()['context'])
         self.ctx.state.profile.reset(token)
         self.assertIn('Steps', self.pre()['context'])
-        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(len(self.calls), 3)
 
 
 if __name__ == '__main__':

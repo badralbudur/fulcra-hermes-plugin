@@ -137,12 +137,13 @@ The six settings and defaults are documented in the README and declared in
 `ctx.set_config("update_interval", 900)` in seconds. No SDK or new dependency
 is imported into Hermes. Current Hermes with `ctx.state` is required.
 
-- Pre hooks record eligible top-level sessions, establish a current-time baseline,
-  and consume that session's cached digest once through `{context: text}`. Hermes
+- Pre hooks record eligible top-level sessions, establish the profile's baseline
+  only on first use/reset, and consume its shared digest once through `{context: text}`. Hermes
   appends it to the **current user message**; history/system prompts are untouched.
   Post hooks have no sender ID, so eligibility comes from pre, not a global last
   sender. Unknown sessions and delegated children cannot trigger a fetch.
-- A due post hook launches one daemon worker per profile/session. The worker uses
+- A due post hook launches one daemon worker per profile, with a shared cooldown
+  across sessions. The worker uses
   `contextvars.copy_context()` so active-home, secret and runtime environment
   resolution survive the thread hop. Hooks never join or await it. There is no
   polling timer: idle means no checks; a later turn gets the cached result.
@@ -153,8 +154,10 @@ is imported into Hermes. Current Hermes with `ctx.state` is required.
   The echoed window and complete response shape are validated before cursor
   advancement. Failures retain the exact attempted window and retry after the
   configured cooldown, including across restarts. No auth flow is launched.
-- State keys hash the session ID. An enablement epoch invalidates old session
-  queues and in-flight results after disable/re-enable through the tool. Direct
+- The `updates-feed` key in `ctx.state` holds one profile-level cursor, pending digest,
+  seen fingerprints and known-write markers. Session IDs only track in-memory
+  eligibility; starting a new session never resets the feed. An enablement epoch
+  invalidates the feed and in-flight results after disable/re-enable. Direct
   config edits are observed on the next hook/worker completion; toggling off and
   on entirely between observations cannot be detected. Disabling does not kill an
   already-running CLI subprocess or erase state.
@@ -162,7 +165,7 @@ is imported into Hermes. Current Hermes with `ctx.state` is required.
   Network work is outside it. Completion re-reads state rather than overwriting
   a snapshot, preserving intervening known-write markers and digest consumption.
   This is **single-process coordination**, not a cross-process session lease:
-  avoid running two Hermes processes against the same profile/session.
+  avoid running two Hermes processes polling the same profile.
 - File metadata uses public OpenAPI `RecentFileChange.full_name`, passed through
   unchanged by SDK/CLI (not a directory/name pair). Version fingerprints include
   `id`, `state`, `uploaded_at`, `archived_at` and `deleted_at`. Scan metadata and
@@ -176,7 +179,7 @@ is imported into Hermes. Current Hermes with `ctx.state` is required.
   Filter expansion is forward-only; filtered windows are not replayed.
 - Successful native writes suppress exact file paths/version IDs or data types
   with a horizon of write time plus max(3600, update_interval) seconds in the
-  originating session. Suppression alone uses `PurePosixPath('/', path)`, matching
+  profile, regardless of which eligible session wrote it. Suppression alone uses `PurePosixPath('/', path)`, matching
   CLI `make_filepath`; tool inputs are neither rewritten nor newly rejected.
   Restore creates a new version; the
   pinned CLI's restore result supplies the original path for suppression.
@@ -197,8 +200,8 @@ is imported into Hermes. Current Hermes with `ctx.state` is required.
 - Prompt metadata is labeled untrusted, never treated as instructions. Guidance
   allows silence, forbids task interruption and medical inference, and requires
   relevance rather than reciting routine sync counts. No file contents or
-  auxiliary LLM calls are fetched/stored. State has Hermes's quota but no session
-  retention cleanup; metadata persists until explicitly removed. Raw CLI output
+  auxiliary LLM calls are fetched/stored. State has Hermes's quota;
+  metadata persists until explicitly removed. Raw CLI output
   is held in memory during validation, not persisted or logged.
 
 The six focused unit workflows exercise registered hooks at a fake CLI boundary.

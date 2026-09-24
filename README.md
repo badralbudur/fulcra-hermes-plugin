@@ -111,13 +111,14 @@ Filter expansion is forward-only: previously filtered windows are not replayed.
 
 Consent is **profile-wide, not a per-user authorization boundary**. Enable only
 in profiles whose chats/users you trust with the same OS-user Fulcra account.
-Notification state and consumption are separate for each chat/session; delegated
-child turns do not poll or receive notices. New sessions start at the current
-time, not with historical data. Disabling and re-enabling through the tool resets
-the baseline on each session's next active turn.
+One profile-level cursor, digest, deduplication history and known-write buffer
+are shared across chats. The next eligible top-level conversation consumes the
+pending digest once; delegated child turns do not poll or receive notices.
+Only first use or disable/re-enable establishes a current-time baseline.
+Starting a new session keeps the existing cursor and pending activity.
 After changing the shared Fulcra login, disable/re-enable updates before resuming
 chats to reset cursors and discard old-account digests. Coordination is within a
-single process; do not run multiple Hermes processes for the same profile/session.
+single process; do not run multiple Hermes processes polling the same profile.
 
 After a turn finishes, a due check runs on a daemon worker with a 30-second CLI
 timeout. There is no timer and **no checking while idle**. A completed digest is
@@ -127,7 +128,7 @@ silent when updates are irrelevant; routine ingestion counts are not events or
 medical findings. The plugin never reads full file contents or calls another LLM.
 
 Successful native uploads/deletes/restores and record writes/deletions are treated
-as already known in that session. Suppression horizons cover at least one hour
+as already known across that profile. Suppression horizons cover at least one hour
 or the configured interval, whichever is longer at write time. Markers survive
 idle gaps until a successful fetch advances the cursor past their horizon.
 File change timestamps, not fetch wall time, are compared with that horizon;
@@ -135,8 +136,8 @@ path identity follows the CLI's POSIX rules without changing tool inputs.
 Record counts (and files without change timestamps) use window-start time as a
 best-effort fallback. This can hide unrelated same-path/type changes, especially
 counts in a long window. Changes timestamped beyond the horizon remain eligible;
-ingestion arriving after the cursor has passed it may echo. Terminal writes,
-other chats, and facts learned outside these tools are not recognized. Failed
+ingestion arriving after the cursor has passed it may echo. Terminal writes and
+facts learned outside these tools are not recognized. Failed
 writes (including CLI `Error:` text) never suppress notices.
 
 Cursors, a bounded metadata digest, deduplication hashes and recent-write markers

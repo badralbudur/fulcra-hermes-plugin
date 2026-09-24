@@ -113,13 +113,13 @@ def main():
             assert seen == ['a', 'b'], seen
             for name in ('a', 'b', 'a'):
                 with scope(name):
-                    text = pre()
+                    text = pre('new-chat')  # New sessions inherit the profile feed.
                     if name == 'a' and seen.count('delivered-a'):
                         assert not text
                     else:
                         assert name + '-type' in text and ('b' if name == 'a' else 'a') + '-type' not in text
                         seen.append('delivered-' + name)
-                    assert not pre('other-chat')
+                    assert not pre('same-chat')  # No replay in the originating session.
                     assert contexts[name].state.path.is_relative_to(root / name)
             with scope('a'):
                 configure({'updates_enabled': False})
@@ -131,7 +131,7 @@ def main():
         for manager in managers.values():
             manager.unload()
         print('PASS: real PluginContext/PluginState, config readback, hook dispatch, current-user context, '
-              'A→B→A isolation, copied worker/runtime scope, child exclusion, disable; network blocked.')
+              'A→B→A isolation, cross-session single delivery, copied worker/runtime scope, child exclusion, disable; network blocked.')
 
 
 if __name__ == '__main__':
