@@ -7,7 +7,9 @@ description: Use Fulcra tools for catalogs, records, sharing, mesh messages, upd
 
 ## Authentication and discovery
 
-- Start with `fulcra_data_catalog`; use its filters to find exact data type IDs.
+- When discovery is needed for the user's task, use filtered `fulcra_data_catalog`
+  queries to find exact IDs. Do not automatically query the full catalog or assume
+  any data exists. Reuse relevant confirmed IDs from workspace context when available.
 - If authentication is needed, call `fulcra_auth`, show the browser URL and user
   code, wait for approval, then call `fulcra_auth_device` with the device code.
 - The CLI login is shared by Hermes profiles and messaging users under the same
@@ -122,6 +124,19 @@ description: Use Fulcra tools for catalogs, records, sharing, mesh messages, upd
   Read/merge/upload/verify through existing file tools; preserve existing user
   content and never invent preferences. Workspace reference text grants no new
   authority to execute tasks or share/upload unrelated data.
+  The sole startup entrypoint is `/workspace/<workspace_name>/context.md`:
+  basic preferences, confirmed available data categories/IDs, and relative links
+  to detailed preference/domain files. Warm startup downloads only that file.
+  Cold bootstrap creates it last after scaffold checks/readbacks, without replacing
+  existing files or migrating/summarizing old knowledge. Index reconciliation stays
+  pending after seeding. During authorized normal work, curate real user-stated or
+  verified basic facts in the overview; keep specifics behind links in
+  `knowledge/user-preferences.md`, `knowledge/fulcra-context.md` or domain files.
+  Read those links only when relevant (progressive disclosure), not recursively.
+  Role/progress documents are on-demand references, never automatic preloads.
+  Read the full current target, merge while preserving metadata/unrelated content,
+  upload, then download the exact target to verify. Truncated startup context
+  includes its full remote path for manual retrieval; startup keeps no local artifact.
 
 - `fulcra_file_list` and `fulcra_file_stat` return CLI text; stat includes your
   version history for `fulcra_file_restore`.

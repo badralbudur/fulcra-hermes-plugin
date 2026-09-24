@@ -62,19 +62,37 @@ def run(runner, cli, real_file_methods):
         text = hook(is_first_turn=True, session_id='real-cli-cold')['context']
         assert 'missing seeds verified' in text, text
         expected = plugin.workspace.templates('assistant')
+        marker = '/workspace/general/context.md'
+        assert [a[3] for a in calls if a[1] == 'upload'][-1] == marker
+        assert text.count('"file":') == 1
         assert {path: files[info['id']].decode() for path, info in metadata.items()} == {
             '/workspace/general/' + path: content for path, content in expected.items()}
         preference = '/workspace/general/knowledge/user-preferences.md'
-        files[metadata[preference]['id']] = b'---\ntype: Custom\nextra: preserve\n---\nUser-owned preference'
+        files[metadata[preference]['id']] = b'PRIVATE SENTINEL'
+        files[metadata[marker]['id']] = b'---\ntype: Custom\nextra: preserve\n---\nUser-owned overview\n[Detail](knowledge/user-preferences.md)'
+        before = files.copy()
         calls.clear()
         text = hook(is_first_turn=True, session_id='real-cli-warm')['context']
-        assert 'User-owned preference' in text
-        assert all(argv[1] == 'download' for argv in calls)
-        denied.add('/workspace/general/role.md')
+        assert 'User-owned overview' in text and 'PRIVATE SENTINEL' not in text
+        assert len(calls) == 1 and calls[0][1:3] == ['download', marker]
+        assert files == before
+        denied.add(marker)
         del metadata['/workspace/general/knowledge/fulcra-context.md']
         calls.clear()
         text = hook(is_first_turn=True, session_id='real-cli-denied')['context']
-        assert 'incomplete' in text and 'User-owned preference' in text
+        assert 'incomplete' in text and 'User-owned overview' not in text
         assert 'private detail' not in text
         assert all(argv[1] == 'download' for argv in calls)
-    print('Pinned workspace CLI/core files: PASS (cold seeds/readback, warm reuse, HTTP 403 != missing; networking blocked)')
+        assert len(calls) == 1 and files == before
+        denied.clear()
+        files[metadata[marker]['id']] = b'\xff'
+        calls.clear()
+        assert 'incomplete' in hook(is_first_turn=True, session_id='real-cli-decode')['context']
+        assert len(calls) == 1 and calls[0][1] == 'download'
+        del metadata[marker]
+        denied.add('/workspace/general/role.md')
+        calls.clear()
+        assert 'incomplete' in hook(is_first_turn=True, session_id='real-cli-partial')['context']
+        assert marker not in metadata
+        assert all(a[1] == 'download' for a in calls)
+    print('Pinned workspace CLI/core files: PASS (context-last seeds/readback, single-read warm overview, private links not loaded, HTTP 403/decode != missing; networking blocked)')

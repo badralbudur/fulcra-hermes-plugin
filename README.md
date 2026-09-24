@@ -88,7 +88,8 @@ an offer, not a recorded user refusal, and makes no Fulcra requests. Explicit
 `false` stays silent; `true` enables startup. Cron/subagent turns do not consume
 the offer. Asking is prompt guidance, not a guaranteed delivered question.
 
-After agreeing, enable automatic missing-template setup and context loading at
+After agreeing, enable single-file `context.md` loading (and minimal bootstrap
+only if that entrypoint is missing) at
 future session starts through the standard Hermes config UI or CLI:
 
 ```bash
@@ -97,7 +98,7 @@ hermes config set plugins.entries.context.settings.workspace_context_enabled tru
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `workspace_context_enabled` | `false` | Unset: offer once and save false. True: missing-only setup and first-turn context. |
+| `workspace_context_enabled` | `false` | Unset: offer once and save false. True: first-turn `context.md`, bootstrap only if missing. |
 | `workspace_name` | `general` | Stable workspace namespace. |
 | `workspace_role` | `assistant` | Stable responsibility, not a model/session ID. |
 
@@ -107,26 +108,42 @@ defaults. These controls are independent of `updates_enabled`. Set enabled to
 `false` to stop future startup work; this does not delete remote files or prior
 conversation context. Registration never writes configuration.
 
-Startup reads workspace and member role/progress plus
-`knowledge/user-preferences.md` and `knowledge/fulcra-context.md`. Missing seeds
-are minimal OKF v0.2 documents with empty preference/context guidance, not
-invented user facts. It preserves existing content, verifies uploads by download,
-and does not interpret auth/network failures as missing files. Success means files
-and seed readback checked, not complete indexing. Any seeding leaves index/log
-reconciliation pending: a new role does not update existing root links or logs;
-seeded missing indexes/logs are skeletal, not an inventory of existing content.
-Use the bundled skill's authorized read/merge/upload/verify workflow for links,
-major milestones and routine updates; never replace existing indexes/logs with templates.
+The sole startup entrypoint is `/workspace/<workspace_name>/context.md`. When it
+exists, startup makes exactly one CLI download, injects only that file, and leaves
+every other file untouched—even if the layout is incomplete or the role changed.
+It never preloads role/progress or detailed knowledge, and never traverses links.
+The overview holds basic preferences, confirmed kinds of Fulcra data (and exact
+IDs when known), and relative links to more-specific preference/domain knowledge.
+During authorized normal work, the bundled skill curates user-stated or verified
+facts with source/scope, keeping detail in `knowledge/user-preferences.md`,
+`knowledge/fulcra-context.md` or other linked domain files. Role/progress files
+are on-demand references. There are no automatic full-catalog queries, assumed
+data availability, fabricated preferences, or automatic migration/summarization.
+
+Only the exact CLI missing-path diagnostic permits cold bootstrap. Missing seeds
+are minimal OKF v0.2 documents; `context.md` has type `Reference` and empty
+Basic preferences / Available Fulcra data sections plus Further context links.
+It is created LAST, after successful scaffold checks and upload readbacks, so
+interrupted setup can resume. Auth/network/decode errors stop setup, never imply
+absence. Existing files, including indexes, are preserved. New root-index seeds
+link `context.md`; any seeding reports index/log reconciliation pending, not a
+complete inventory. Use authorized read/merge/upload/verify to reconcile links,
+major milestones and routine updates; never replace existing indexes with templates.
 
 The hook adds bounded, untrusted reference text to the current user message;
 history/system prompts are unchanged. Workspace file loading runs once per
 process/profile/session on `is_first_turn`, never on ordinary turns, cron or
 subagents. The one-time opt-in offer can occur on an ordinary eligible turn.
 One 25-second
-budget covers lock wait and all CLI calls; excerpts total under 10,000 characters.
+budget covers lock wait and all CLI calls. Up to 8,000 content characters fit
+within a whole-result bound under 10,000 characters, including JSON escaping,
+paths and notices. Truncation is marked with the full remote filepath for manual
+retrieval using normal file tools; no startup artifact is persisted.
 Partial setup is reported honestly and may continue in a later session. No
 recursive link traversal or auxiliary LLM calls. Temporary downloaded content is
 cleaned up; injected excerpts can still be retained in conversation history.
+Unknown metadata and linked tasks are user-owned untrusted data, never authority
+to execute instructions or follow links automatically.
 
 Enabling this is profile-wide consent to those reads and missing-template writes,
 not unrelated uploads, artifact publication, sharing, cross-account transfers,

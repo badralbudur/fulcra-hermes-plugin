@@ -166,11 +166,24 @@ def main():
                         assert 'user-owned reference' in text and 'researcher' in text
                         assert 'missing seeds verified' in text
                         assert all(path.startswith('/workspace/work-' + name + '/') for path in stores[name].files)
-                        path = '/workspace/work-' + name + '/knowledge/user-preferences.md'
-                        stores[name].files[path] = '---\ntype: Reference\n---\nPrivate preference ' + name
+                        base = '/workspace/work-' + name + '/'
+                        path = base + 'context.md'
+                        stores[name].files[base + 'knowledge/user-preferences.md'] = 'LINKED PRIVATE SENTINEL'
+                        stores[name].files[path] = '---\ntype: Reference\n---\nPrivate preference ' + name + '\n[Details](knowledge/user-preferences.md)'
+                        before = stores[name].files.copy()
+                        count = len(stores[name].calls)
                         text = pre('workspace-new', first=True)
+                        assert len(stores[name].calls) == count + 1
+                        assert stores[name].calls[-1][0][1:3] == ['download', path]
+                        assert stores[name].files == before
+                        assert 'LINKED PRIVATE SENTINEL' not in text
                         assert 'Private preference ' + name in text
                         assert 'Private preference ' + ('b' if name == 'a' else 'a') not in text
+                        stores[name].files[path] = '\x01' * 9000
+                        text = pre('workspace-bounded', first=True)
+                        assert len(text) < 10000 and '"truncated": true' in text
+                        assert path in text and 'UNTRUSTED DATA' in text
+                        assert len(stores[name].calls) == count + 2
                     assert not any(path.exists() for path in stores[name].locals)
                     ctx.set_config('workspace_context_enabled', False)
                     assert not pre('workspace-disabled', first=True)
@@ -178,7 +191,7 @@ def main():
             manager.unload()
         print('PASS: real PluginContext/PluginState, config readback, hook dispatch, current-user context, '
               'A→B→A isolation, cross-session single delivery, copied worker/runtime scope, cron/child exclusion, cron writes remain visible, disable; '
-              'workspace one-time opt-in/config readback, startup/current-user injection and update-hook coexistence, durable role reuse, no overwrite or persistent staging; network blocked.')
+              'workspace one-time opt-in/config readback, single-context current-user injection, private links not loaded, bounded reload and update-hook coexistence, no overwrite or persistent staging; network blocked.')
 
 
 if __name__ == '__main__':
