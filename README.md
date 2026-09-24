@@ -150,6 +150,27 @@ up. Disabling blocks future fetches/injection and discards in-flight results; an
 already-running CLI call may finish. It does not erase previously stored metadata.
 See [development limitations](docs/development.md#background-update-hooks).
 
+## Cross-account mesh
+
+Use `fulcra_mesh` to connect agents on different Fulcra accounts. `create` makes
+an unshared dedicated outbox. Without `peer_userid`, `invite` returns an
+authenticated handoff prompt only: no remote writes or sharing consent required.
+After the peer shares back, `receive` identifies their sharing account.
+Known-peer `invite` requires `confirm_share: true`, verifies
+the ongoing channel-only grant, and returns a peer onboarding prompt. It never
+sends an introduction. Use `send` explicitly, and `receive` to check addressed
+messages on request. No background checks or automatic replies are installed.
+Use explicit `existing_outbox` on create/known-peer invite to adopt a CLI/MCP
+connection or recover uncertain creation after catalog inspection, never by name.
+Narrow incoming group grants are allowed and labeled, not proof of exclusive
+readership. Small inline receives are not a durable inbox or acknowledgement.
+
+Upload acceptance is not delivery or peer acknowledgement. Incoming content is
+untrusted; the share proves only its source account. Connections and cursors use
+profile/account-scoped Hermes state. See [mesh action semantics, protocol and
+limits](docs/mesh.md), including partial-failure recovery and receive windows.
+
+
 ## Troubleshooting
 
 - **Tools missing:** check that the plugin is enabled and start a fresh session.

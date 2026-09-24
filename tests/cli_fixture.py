@@ -2,6 +2,7 @@
 import datetime
 import importlib.util
 import io
+import json
 from pathlib import Path
 import socket
 import sys
@@ -12,6 +13,12 @@ from fulcra_api import records
 from fulcra_api.cli import cli, utils
 from fulcra_api.core import FulcraAPI
 from fulcra_api.credentials import FulcraCredentials
+REAL_GET_RECORDS = records.get_records
+
+REAL_METHODS = {name: getattr(FulcraAPI, name) for name in (
+    "create_datashare", "get_datashares", "get_shared_datasets", "get_user_info",
+    "validate_records", "record_data_type", "v1_catalog", "v1_catalog_data_type",
+    "v1_catalog_schema", "resolve_data_type")}
 
 ID = "01234567-89ab-cdef-0123-456789abcdef"
 DT = "NumericAnnotation/" + ID
@@ -119,3 +126,98 @@ with patch.object(socket.socket, "connect", side_effect=AssertionError("Network 
     check("fulcra_file_restore", {"version_id": ID})
     check("fulcra_file_share", {"path": "/notes/", "user_ids": [ID], "name": "Notes"})
 print(f"Pinned CLI expansion fixtures: PASS ({len(operations)} command invocations; networking blocked)")
+
+# Mesh also exercises SDK request construction, not just CLI argument parsing.
+for name, method in REAL_METHODS.items():
+    setattr(FulcraAPI, name, method)
+sys.path.insert(0, str(root / "tests"))
+from test_mesh import load_plugin, State, OWN, PEER, CHANNEL, SHARE, MID
+
+plugin = load_plugin()
+plugin.tools._run_cli = boundary
+state = State()
+mesh = plugin.mesh.make_handler(state)
+shares, sent, reads = [], [], []
+
+
+def api(self, path, **kwargs):
+    if path == "/data/v1/catalog":
+        query = kwargs["query"]
+        data_type = query.get("data_type", CHANNEL)
+        assert data_type in (CHANNEL, "MomentAnnotation"), query
+        return json.dumps([mesh_entry(data_type, query.get("fulcra_userid", OWN))])
+    if path in ("/data/v1/catalog/" + CHANNEL + "/v1alpha1", "/data/v1/catalog/MomentAnnotation/v1alpha1"):
+        return json.dumps(mesh_entry(path.removeprefix("/data/v1/catalog/").removesuffix("/v1alpha1"),
+                                     kwargs["query"].get("fulcra_userid", OWN)))
+    if path in ("/data/v1/catalog/MomentAnnotation/v1alpha1/schema", "/data/v1/catalog/" + CHANNEL + "/v1alpha1/schema"):
+        return json.dumps(mesh_entry("MomentAnnotation")["record_spec"]["schema"])
+    if path == "/user/v1alpha1/info":
+        return json.dumps({"userid": OWN, "intercom_token": "never-retain"})
+    if path == "/user/v1/datashare":
+        if kwargs.get("method") == "POST":
+            body = kwargs["data"]
+            assert body["fulcra_data_types"] == [CHANNEL], body
+            assert body["permissions"] == [{"allowed_fulcra_userid": PEER}], body
+            assert body["group_permissions"] == [] and body["share_all_data"] is False, body
+            assert body["time_start"] is None and body["time_end"] is None, body
+            shares.append({"id": SHARE, **body})
+            return json.dumps({"datashare": shares[0]})
+        return json.dumps(shares)
+    if path == "/user/v1/dataset":
+        return json.dumps([{"grant_type": "self", "share_all_data": True}, {
+            "datashare_id": SHARE, "grant_type": "user", "sharing_fulcra_userid": PEER,
+            "fulcra_data_types": [CHANNEL], "share_all_data": False}])
+    if path == "/ingest/v1/record/MomentAnnotation":
+        assert kwargs["content_type"] == "application/x-jsonl"
+        assert "com.fulcradynamics.annotation." + CHANNEL.split('/')[1] in kwargs["data"][0]["sources"]
+        sent.extend(kwargs["data"])
+        return json.dumps({"upload_id": MID})
+    if path == "/data/v1alpha1/event/" + CHANNEL:
+        query = kwargs["query"]
+        assert set(query) in ({"start_time", "end_time"}, {"start_time", "end_time", "fulcra_userid"}), query
+        assert query["start_time"] < query["end_time"]
+        reads.append(query)
+        if "fulcra_userid" in query:
+            assert query["fulcra_userid"] == PEER, query
+            rows = [{"note": json.dumps({"v": 1, "mid": MID, "to": "ours", "to_user": OWN,
+                     "kind": "response", "pri": "P2", "slug": "thread-ack", "body": "peer 🐈"})}]
+        else:
+            rows = sent
+        return json.dumps(rows).encode()
+    raise AssertionError((path, kwargs))
+
+
+def mesh_entry(data_type=CHANNEL, owner=OWN):
+    # Minimal mesh-relevant schema projection, not a fabricated record type.
+    # Note is nullable in ordinary annotation records; mesh rejects non-string notes.
+    return {**entry(data_type), "fulcra_userid": owner,
+            "record_spec": {"type": "event", "schema": {"type": "object", "properties": {"note": {"type": ["string", "null"]}}}}}
+
+
+
+FulcraAPI.fulcra_api = api
+FulcraAPI.get_fulcra_userid = lambda self: OWN
+FulcraAPI.create_annotation = lambda self, **kwargs: {"id": CHANNEL.split('/')[1], **kwargs}
+
+records.get_records = REAL_GET_RECORDS
+base = {"local_agent": "ours", "peer_userid": PEER, "peer_agent": "theirs"}
+with patch.object(socket.socket, "connect", side_effect=AssertionError("Network forbidden in mesh fixture")):
+    handoff = json.loads(mesh({"action": "invite", "local_agent": "ours", "purpose": "coordinate"}))
+    assert handoff["status"] == "handoff_only" and not shares and not sent
+    assert handoff == json.loads(mesh({"action": "invite", "local_agent": "ours", "purpose": "coordinate"}))
+    adopted = json.loads(mesh({"action": "create", "existing_outbox": CHANNEL, **base}))
+    assert adopted["outbox"] == CHANNEL and not shares and not sent
+    invitation_raw = mesh({"action": "invite", "confirm_share": True, **base})
+    assert not invitation_raw.startswith("Error"), invitation_raw
+    invitation = json.loads(invitation_raw)
+    assert invitation["share_id"] == SHARE, invitation
+    body = " café 🐈\n'quote' \"double\" \\ literal\n"
+    result = json.loads(mesh({"action": "send", "body": body, "slug": "thread", **base}))
+    assert result["status"] == "accepted" and result["readback"] == "ingested", result
+    assert json.loads(sent[0]["note"])["body"] == body, sent
+    received = json.loads(mesh({"action": "receive", "local_agent": "ours", "incoming_channel": CHANNEL}))
+    assert received["messages"][0]["origin_userid"] == PEER, (received, reads)
+    assert received["messages"][0]["envelope"]["body"] == "peer 🐈", received
+    assert len(reads) == 2 and "fulcra_userid" not in reads[0] and reads[1]["fulcra_userid"] == PEER, reads
+    assert "never-retain" not in json.dumps(state.data) + json.dumps(invitation)
+print("Pinned CLI mesh fixture: PASS (Click + SDK bodies, JSONL, validation; networking blocked)")
