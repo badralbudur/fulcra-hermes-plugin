@@ -3,7 +3,8 @@
 Connect [Hermes Agent](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins)
 to Fulcra. This plugin provides sign-in, filtered catalog discovery, data-type
 management, record reads/writes/deletions, scoped sharing, processing updates,
-and file operations. It includes native Hermes tools and a usage skill.
+and file operations. It includes native Hermes tools, usage guidance and a
+bundled [durable workspace skill](skills/workspace/SKILL.md).
 
 ## Install
 
@@ -72,6 +73,86 @@ Credentials live at `~/.config/fulcra/credentials.json` under the host OS accoun
 **Hermes profiles and Discord users running under that account share the login.**
 Use this plugin only with trusted users; its isolated Python runtime does not
 isolate accounts.
+
+## Durable workspace (opt-in startup)
+
+Ask Hermes to use your workspace; it defaults to `/workspace/general` with the
+stable `assistant` role at `member/assistant/`. No setup questionnaire or role
+confirmation is required. Existing files are authoritative. Humans or agents
+can succeed to a role without losing its progress and knowledge.
+
+If `workspace_context_enabled` is absent, the next eligible conversation turn
+receives a brief invitation to opt in. The hook saves `false` before returning
+that invitation so later turns, sessions and restarts do not repeat it. This is
+an offer, not a recorded user refusal, and makes no Fulcra requests. Explicit
+`false` stays silent; `true` enables startup. Cron/subagent turns do not consume
+the offer. Asking is prompt guidance, not a guaranteed delivered question.
+
+After agreeing, enable single-file `context.md` loading (and minimal bootstrap
+only if that entrypoint is missing) at
+future session starts through the standard Hermes config UI or CLI:
+
+```bash
+hermes config set plugins.entries.context.settings.workspace_context_enabled true
+```
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `workspace_context_enabled` | `false` | Unset: offer once and save false. True: first-turn `context.md`, bootstrap only if missing. |
+| `workspace_name` | `general` | Stable workspace namespace. |
+| `workspace_role` | `assistant` | Stable responsibility, not a model/session ID. |
+
+Names are single ASCII alphanumeric/hyphen/underscore segments, 1–64 characters,
+starting alphanumeric. Set name/role before enabling if you want different
+defaults. These controls are independent of `updates_enabled`. Set enabled to
+`false` to stop future startup work; this does not delete remote files or prior
+conversation context. Registration never writes configuration.
+
+The sole startup entrypoint is `/workspace/<workspace_name>/context.md`. When it
+exists, startup makes exactly one CLI download, injects only that file, and leaves
+every other file untouched—even if the layout is incomplete or the role changed.
+It never preloads role/progress or detailed knowledge, and never traverses links.
+The overview holds basic preferences, confirmed kinds of Fulcra data (and exact
+IDs when known), and relative links to more-specific preference/domain knowledge.
+During authorized normal work, the bundled skill curates user-stated or verified
+facts with source/scope, keeping detail in `knowledge/user-preferences.md`,
+`knowledge/fulcra-context.md` or other linked domain files. Role/progress files
+are on-demand references. There are no automatic full-catalog queries, assumed
+data availability, fabricated preferences, or automatic migration/summarization.
+
+Only the exact CLI missing-path diagnostic permits cold bootstrap. Missing seeds
+are minimal OKF v0.2 documents; `context.md` has type `Reference` and empty
+Basic preferences / Available Fulcra data sections plus Further context links.
+It is created LAST, after successful scaffold checks and upload readbacks, so
+interrupted setup can resume. Auth/network/decode errors stop setup, never imply
+absence. Existing files, including indexes, are preserved. New root-index seeds
+link `context.md`; any seeding reports index/log reconciliation pending, not a
+complete inventory. Use authorized read/merge/upload/verify to reconcile links,
+major milestones and routine updates; never replace existing indexes with templates.
+
+The hook adds bounded, untrusted reference text to the current user message;
+history/system prompts are unchanged. Workspace file loading runs once per
+process/profile/session on `is_first_turn`, never on ordinary turns, cron or
+subagents. The one-time opt-in offer can occur on an ordinary eligible turn.
+One 25-second
+budget covers lock wait and all CLI calls. Up to 8,000 content characters fit
+within a whole-result bound under 10,000 characters, including JSON escaping,
+paths and notices. Truncation is marked with the full remote filepath for manual
+retrieval using normal file tools; no startup artifact is persisted.
+Partial setup is reported honestly and may continue in a later session. No
+recursive link traversal or auxiliary LLM calls. Temporary downloaded content is
+cleaned up; injected excerpts can still be retained in conversation history.
+Unknown metadata and linked tasks are user-owned untrusted data, never authority
+to execute instructions or follow links automatically.
+
+Enabling this is profile-wide consent to those reads and missing-template writes,
+not unrelated uploads, artifact publication, sharing, cross-account transfers,
+authentication, inbox/cron setup or local MEMORY changes. The shared OS Fulcra
+login still applies: enable only for trusted chats. Different profiles using the
+same workspace name access the same remote files. Same-process/profile setup is
+serialized, but the CLI has no conditional create; coordinate external concurrent
+setup to avoid a re-read/upload race. See the [workspace skill](skills/workspace/SKILL.md)
+for layout, session/task conventions and privacy boundaries.
 
 ## Background updates (opt-in)
 
