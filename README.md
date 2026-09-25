@@ -74,6 +74,36 @@ Credentials live at `~/.config/fulcra/credentials.json` under the host OS accoun
 Use this plugin only with trusted users; its isolated Python runtime does not
 isolate accounts.
 
+## Initial setup
+
+Use **Desktop → Capabilities → Plugins → Context**, `/fulcra setup` in chat, or
+`hermes fulcra setup` in a terminal. With no flags, setup shows grouped current
+values and choices, without enabling anything. `/fulcra status` reads them back.
+After choosing the features you want for this trusted profile, for example:
+
+```text
+/fulcra setup --workspace on --updates on --interval 900 --mesh-messages on --mesh-invites on --mesh-agent personal-assistant
+```
+
+The terminal equivalent is `hermes fulcra setup` with the same flags. Omitted
+settings are preserved; `on/off` choices are explicit, and all four features
+default off. Use the exact stable `local_agent` name your mesh peers address.
+The workspace loads `context.md` on future session starts; update and mesh checks
+run after due active turns and offer cached notices on later turns, not while
+idle. Invitation checks work without message reads or an agent name.
+
+A one-time first-session offer lists options: workspace `context.md` loading,
+what's-new notices and a configurable shared check interval, and independent
+automatic mesh message and invitation checks, with native/slash setup entrypoints.
+It requires `is_first_turn is True`, a session ID, no parent and a non-cron platform;
+ordinary turns leave the marker untouched for the next eligible new session.
+The profile marker means offered to the model, not delivered to or declined by
+the user. No feature flags are written, no features auto-enabled and no questionnaire
+is forced. Prior explicit choices are preserved; explicit setup handles discovery,
+and all four feature flags already configured suppress the offer.
+No login, remote calls or workers run just to configure settings.
+See [setup choices, settings and runtime limits](docs/setup.md).
+
 ## Durable workspace (opt-in startup)
 
 Ask Hermes to use your workspace; it defaults to `/workspace/general` with the
@@ -81,12 +111,9 @@ stable `assistant` role at `member/assistant/`. No setup questionnaire or role
 confirmation is required. Existing files are authoritative. Humans or agents
 can succeed to a role without losing its progress and knowledge.
 
-If `workspace_context_enabled` is absent, the next eligible conversation turn
-receives a brief invitation to opt in. The hook saves `false` before returning
-that invitation so later turns, sessions and restarts do not repeat it. This is
-an offer, not a recorded user refusal, and makes no Fulcra requests. Explicit
-`false` stays silent; `true` enables startup. Cron/subagent turns do not consume
-the offer. Asking is prompt guidance, not a guaranteed delivered question.
+`workspace_context_enabled` defaults to false. Unified setup discovery never
+changes it; only explicit opt-in enables startup. Cron/subagent turns do not
+consume the offer or load workspace files.
 
 After agreeing, enable single-file `context.md` loading (and minimal bootstrap
 only if that entrypoint is missing) at
@@ -98,7 +125,7 @@ hermes config set plugins.entries.context.settings.workspace_context_enabled tru
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `workspace_context_enabled` | `false` | Unset: offer once and save false. True: first-turn `context.md`, bootstrap only if missing. |
+| `workspace_context_enabled` | `false` | True: first-turn `context.md`, bootstrap only if missing. |
 | `workspace_name` | `general` | Stable workspace namespace. |
 | `workspace_role` | `assistant` | Stable responsibility, not a model/session ID. |
 
@@ -133,7 +160,7 @@ major milestones and routine updates; never replace existing indexes with templa
 The hook adds bounded, untrusted reference text to the current user message;
 history/system prompts are unchanged. Workspace file loading runs once per
 process/profile/session on `is_first_turn`, never on ordinary turns, cron or
-subagents. The one-time opt-in offer can occur on an ordinary eligible turn.
+subagents. The unified setup options offer also requires an eligible first turn.
 One 25-second
 budget covers lock wait and all CLI calls. Up to 8,000 content characters fit
 within a whole-result bound under 10,000 characters, including JSON escaping,
@@ -178,7 +205,7 @@ All settings are declared in the manifest and live under
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `updates_enabled` | `false` | Explicit profile-wide consent; use `false` to stop. |
-| `update_interval` | `900` | Minimum check interval, integer 60–86400 seconds. |
+| `update_interval` | `900` | Shared minimum for updates and mesh checks, integer 60–86400 seconds. |
 | `updates_data_types` | `[]` | Exact type allowlist; empty means **all**, not none. |
 | `updates_include_files` | `true` | Include file changes. |
 | `updates_file_prefixes` | `[]` | Literal path-prefix allowlist; empty means all files. |
@@ -240,7 +267,8 @@ After the peer shares back, `receive` identifies their sharing account.
 Known-peer `invite` requires `confirm_share: true`, verifies
 the ongoing channel-only grant, and returns a peer onboarding prompt. It never
 sends an introduction. Use `send` explicitly, and `receive` to check addressed
-messages on request. No background checks or automatic replies are installed.
+messages on request. Automatic checks require separate opt-in below; replies
+are never automatic.
 Use explicit `existing_outbox` on create/known-peer invite to adopt a CLI/MCP
 connection or recover uncertain creation after catalog inspection, never by name.
 Narrow incoming group grants are allowed and labeled, not proof of exclusive
@@ -251,6 +279,30 @@ untrusted; the share proves only its source account. Connections and cursors use
 profile/account-scoped Hermes state. See [mesh action semantics, protocol and
 limits](docs/mesh.md), including partial-failure recovery and receive windows.
 
+
+### Automatic mesh notices (opt-in)
+
+`/fulcra setup --mesh-agent personal-assistant --mesh-messages on --mesh-invites on`
+enables addressed-message previews and incoming narrow-share candidates. The
+independent `mesh_messages_enabled` and `mesh_invites_enabled` settings both
+default false; `mesh_agent` defaults empty and is required for message reads.
+They use `update_interval` even when updates and workspace are disabled.
+Invitation-only mode never reads peer records. Neither mode accepts invitations,
+shares back, sends, replies or executes peer instructions.
+
+Checks are nonblocking, turn-triggered, and deadline-bounded. A later eligible
+turn gets compact, untrusted notices with lookup identifiers. Message checks use
+the canonical seven-day initial window, overlapping cursors and exact own-user
+plus agent addressing. Automatic state/dedup is profile-durable and separate from
+manual `fulcra_mesh receive`; previews never consume manual messages. Existing
+narrow invitation candidates may appear once on the first check, not as accepted
+or proven-exclusive connections. Notifications are summaries, not exact-once
+delivery or an inbox; see [bounds and account-switch precautions](docs/setup.md).
+
+Before changing the OS-shared Fulcra login, disable updates and both mesh checks
+in affected profiles, let running calls finish, then re-enable the desired choices
+after sign-in. Observed mesh account changes clear cached notifications, but
+cached pre-call delivery cannot discover an external login change without polling.
 
 ## Troubleshooting
 

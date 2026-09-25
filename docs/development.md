@@ -108,7 +108,9 @@ even if dependencies are cached. It has no offline/cache-only mode.
 
 `mesh.py` registers one `fulcra_mesh` handler bound to `ctx.state`. It shares the
 existing CLI, private record staging, and bounded-output helpers. No host SDK,
-hooks, schedules, or LLM calls. A process-local lock covers connection changes
+schedules, or LLM calls. `mesh_updates.py` reuses its receive helper with an
+injected bounded CLI callable and separate automatic state; see [setup.md](setup.md).
+A process-local lock covers manual connection changes
 and receive commits; metadata keys include the current account and agent/peer
 identity. Oversized output persistence precedes receive cursor commits; small
 inline responses are not saved as files or guaranteed as a durable inbox.
@@ -176,14 +178,15 @@ no new tool or registration-time settings write. Load the bundled
 [`workspace` skill](../skills/workspace/SKILL.md) for durable role and OKF rules.
 It adapts the pinned fulcra-workspaces reference rather than depending on mesh.
 
-- The offer requires a session ID, no parent, and platform other than cron.
-  `ctx.get_config` uses an absence sentinel, independent of the manifest's false
-  default. When absent, the hook persists `false` via `ctx.set_config` and returns
-  a brief opt-in instruction; no Fulcra I/O occurs. Explicit false stays silent.
-  A process lock prevents simultaneous hook offers; persisted false suppresses
-  later sessions/restarts. Other profiles get their own offer. This records an
-  offered question, not confirmed delivery or user refusal.
-- Enabled file loading additionally requires `is_first_turn is True`.
+- Setup discovery lives in `plugin_setup.py` (not setuptools's `setup.py`). It
+  requires `is_first_turn is True`, a session ID, no parent and platform other
+  than cron before checking the marker. Ordinary turns leave discovery available
+  for the next eligible new session. The options offer includes workspace loading,
+  what's-new notices/shared interval and independent mesh message/invitation checks.
+  It writes only a durable `ctx.state` marker meaning offered, not delivered or
+  declined, never feature configuration. Existing choices remain intact.
+  See [setup frontends and rationale](setup.md).
+- Enabled file loading also requires `is_first_turn is True`.
   An in-memory `(ctx.state.path, session_id)` marker
   suppresses repeated first-turn work. No downloaded content or completion cache
   is persisted; restarting the process permits another checked startup.
@@ -246,8 +249,8 @@ Click commands and core resolve/upload/download methods against a fake HTTP
 file store, temporary credentials and blocked sockets (including HTTP 403 and
 decode failures vs exact missing-path behavior). No real account is contacted.
 
-The real-Hermes probe below now also exercises absent-setting opt-in and durable
-false readback without remote I/O, workspace configuration, first-turn current-user
+The real-Hermes probe below also exercises unified discovery without feature
+configuration writes, workspace configuration, first-turn current-user
 injection, single-file warm reload without linked private detail, update-hook coexistence,
 A → B → A isolation, no registration writes, and temporary staging cleanup.
 
@@ -255,7 +258,7 @@ A → B → A isolation, no registration writes, and temporary staging cleanup.
 
 `updates.py` registers `pre_llm_call`, `post_llm_call`, `post_tool_call` and
 `fulcra_configure_updates`. Registration performs no network or persistent writes.
-The six settings and defaults are documented in the README and declared in
+The update settings and defaults are documented in the README and declared in
 `plugin.yaml`; tool writes go through `ctx.set_config`, including
 `ctx.set_config("update_interval", 900)` in seconds. No SDK or new dependency
 is imported into Hermes. Current Hermes with `ctx.state` is required.
@@ -345,3 +348,21 @@ registered configuration tool and lifecycle dispatcher, checks current-user
 context composition, and switches A → B → A under multiplexing. Its worker also
 executes the real `_runtime_context()` to verify profile/secret propagation.
 It never authenticates or contacts Fulcra, and never loads installed user plugins.
+
+## Unified setup and automatic mesh (PLAT-470)
+
+See [setup.md](setup.md) for the native settings choice, slash/CLI frontends,
+feature consumers, account-switch precautions and automatic notification limits.
+Six additional workflow tests cover explicit-only setup/readback and invalid
+arguments, one-time discovery, independent mesh flags, recipient filtering,
+durable dedup/cursors, manual receive independence, deadlines/nonblocking workers,
+in-flight config invalidation, cooldown/failure preservation and profile/session gates.
+The existing pinned CLI fixture exercises the canonical parser/read protocol reused
+by the worker; no second protocol fixture is needed.
+
+`hermes_updates_probe.py` additionally resolves the real registered slash handler
+and CLI parser/handler, uses real `PluginContext` settings writes/readback in
+temporary homes, verifies native form field recognition/writes, and exercises
+workspace/update/mesh hook coexistence under A→B→A multiplexing with blocked
+network and copied worker contexts. `mesh_hermes_probe.py` retains coverage of
+manual mesh registration/state reload. No installed profiles are modified.

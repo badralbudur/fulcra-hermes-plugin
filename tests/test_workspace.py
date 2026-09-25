@@ -126,11 +126,8 @@ class WorkspaceTests(unittest.TestCase):
             self.assertIsNone(self.pre('chat', **args))
         self.assertIsNone(self.pre(''))
         self.assertEqual(self.ctx.config, {})
-        offered = self.pre(is_first_turn=False)
-        self.assertIsNotNone(offered)
-        self.assertIn('ask the user', offered['context'])
-        self.assertIn('context.md', offered['context'])
-        self.assertIs(self.ctx.get_config('workspace_context_enabled'), False)
+        self.assertIsNone(self.pre(is_first_turn=False))
+        self.assertEqual(self.ctx.config, {})  # Discovery belongs to plugin_setup, not workspace.
         self.assertIsNone(self.pre('another-session'))
         restarted = self.plugin.workspace.Workspace(self.ctx)
         self.assertIsNone(restarted.pre(is_first_turn=True, session_id='restarted'))
@@ -244,8 +241,8 @@ class WorkspaceTests(unittest.TestCase):
         self.store.files[marker] = '\x01' * 9000
         self.assertLess(len(self.pre('escaped')['context']), 10000)
         token = self.ctx.state.profile.set('b')
-        self.assertIn('ask the user', self.pre()['context'])  # Independent opt-in in B.
-        self.assertIs(self.ctx.get_config('workspace_context_enabled'), False)
+        self.assertIsNone(self.pre())  # Independent consent in B, no configuration writes.
+        self.assertIsNone(self.ctx.get_config('workspace_context_enabled'))
         self.ctx.set_config('workspace_context_enabled', True)
         self.assertIn('missing seeds verified', self.pre()['context'])
         self.assertIn('/workspace/general/member/assistant/role.md', self.store.files)

@@ -32,50 +32,76 @@ provides_hooks:
   - pre_llm_call
   - post_llm_call
   - post_tool_call
+provides_commands:
+  - fulcra
 config_schema:
   workspace_context_enabled:
+    label: 'Workspace: Load context'
     type: boolean
     default: false
-    description: Load context.md in trusted chats, bootstrap if missing; unset offers once then saves false.
+    description: Load context.md in trusted chats; bootstrap missing workspace files only when enabled.
   workspace_name:
+    label: 'Workspace: Name'
     type: string
     default: general
     pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
     description: 'Workspace namespace: one stable path segment, not a session ID.'
   workspace_role:
+    label: 'Workspace: Durable role'
     type: string
     default: assistant
     pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
     description: Durable responsibility under member/, shared by successive humans or agents.
   updates_enabled:
+    label: 'Updates: Enable notices'
     type: boolean
     default: false
     description: Profile-wide opt-in for trusted chats sharing the OS Fulcra account.
   update_interval:
+    label: 'Checks: Minimum interval (seconds)'
     type: integer
     minimum: 60
     maximum: 86400
     default: 900
-    description: Minimum seconds between turn-triggered checks; no idle polling.
+    description: Minimum seconds between turn-triggered update and mesh checks; no idle polling.
   updates_data_types:
+    label: 'Updates: Data type allowlist'
     type: array
     items: {type: string, minLength: 1}
     default: []
     description: Exact data type IDs; empty means all types.
   updates_include_files:
+    label: 'Updates: Include files'
     type: boolean
     default: true
     description: Include file changes in digests.
   updates_file_prefixes:
+    label: 'Updates: File prefix allowlist'
     type: array
     items: {type: string, minLength: 1}
     default: []
     description: Literal remote path prefixes; empty means all files.
   updates_ignore_prefixes:
+    label: 'Updates: Ignored file prefixes'
     type: array
     items: {type: string, minLength: 1}
     default: []
     description: Exclude matching literal file prefixes, overriding includes.
+  mesh_messages_enabled:
+    label: 'Mesh: Message notices'
+    type: boolean
+    default: false
+    description: Read addressed peer messages in trusted chats; never automatically reply or execute.
+  mesh_invites_enabled:
+    label: 'Mesh: Invitation candidates'
+    type: boolean
+    default: false
+    description: Notice narrow incoming share candidates; never automatically accept or share back.
+  mesh_agent:
+    label: 'Mesh: Local agent name'
+    type: string
+    default: ''
+    description: Stable exact local_agent name, required for automatic message reads.
 description: Fulcra Context tools and resources for Hermes Agent.
 author:
   name: Fulcra Dynamics

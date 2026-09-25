@@ -16,7 +16,7 @@ SETTINGS = {
     'updates_enabled': {'type': 'boolean', 'default': False,
                         'description': 'Profile-wide opt-in for trusted chats sharing the OS Fulcra account.'},
     'update_interval': {'type': 'integer', 'minimum': 60, 'maximum': 86400, 'default': 900,
-                        'description': 'Minimum seconds between turn-triggered checks; no idle polling.'},
+                        'description': 'Minimum seconds between turn-triggered update and mesh checks; no idle polling.'},
     'updates_data_types': {'type': 'array', 'items': {'type': 'string', 'minLength': 1}, 'default': [],
                            'description': 'Exact data type IDs; empty means all types.'},
     'updates_include_files': {'type': 'boolean', 'default': True,

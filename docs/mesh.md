@@ -2,8 +2,11 @@
 
 `fulcra_mesh` implements envelope v1 from [fulcra-mesh 0.5.0](https://github.com/fulcradynamics/agent-skills/tree/ba3f4f81a6660e148bf2312109f6f1fd6f1f7733/skills/fulcra-mesh)
 (reference commit `ba3f4f81a6660e148bf2312109f6f1fd6f1f7733`). It uses
-`fulcra-api==0.1.42`, not a host SDK. No hooks, schedules, automatic replies,
-LLM calls, account lookup, token printing, or authentication initiation.
+`fulcra-api==0.1.42`, not a host SDK. The manual tool initiates no schedules,
+automatic replies, LLM calls, peer-account search, token printing or authentication.
+Independent opt-in [automatic message and invitation notices](setup.md) reuse its
+read protocol through turn hooks, with separate automatic cursors. They never
+accept, share or reply, and do not consume the manual receive state described here.
 
 ## Actions
 

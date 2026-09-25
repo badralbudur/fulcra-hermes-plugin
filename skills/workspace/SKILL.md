@@ -39,12 +39,19 @@ The plugin's opt-in first-turn hook reads settings under
 - `workspace_name`: general by default.
 - `workspace_role`: assistant by default.
 
-When the setting is absent, the plugin injects a one-time instruction to briefly
-ask about enabling it, then leaves it explicitly false to prevent repeat offers.
-The offer makes no Fulcra requests and can appear on any eligible non-cron,
-non-subagent turn. Saved false is not evidence the user declined. Enable only
-after agreement; startup loading begins on a future eligible first turn.
-If false was explicitly configured already, do not ask again automatically.
+Unified first-session discovery offers options, not a bare settings pointer:
+workspace context.md loading, what's-new notices and a configurable shared check
+interval, and independent automatic mesh message and invitation checks. Point to
+Desktop Capabilities → Plugins → Context, `/fulcra setup` or `hermes fulcra setup`.
+It requires `is_first_turn is True`, a session ID, no parent and a non-cron platform;
+ordinary turns leave the marker untouched for the next eligible new session.
+The durable per-profile marker means offered, not delivered or declined. No feature
+flags change, Fulcra requests, auto-enablement or forced questionnaire occur.
+`/fulcra setup --workspace on` (or `hermes fulcra setup --workspace on`) explicitly
+enables startup after agreement, beginning on a future eligible first turn.
+The same setup covers updates and automatic mesh notices independently; use
+`/fulcra setup --help` or the bundled context skill for those choices. Preserve
+existing true/false settings; never infer consent from an absent value.
 
 Names are one segment, 1–64 ASCII alphanumeric/hyphen/underscore characters,
 starting alphanumeric. Choose the namespace/role before enabling if not using

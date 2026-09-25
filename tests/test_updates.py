@@ -60,6 +60,14 @@ class Context:
     def register_skill(self, *args):
         pass
 
+    def register_command(self, *args, **kwargs):
+        """Accept slash registration without installing a real command."""
+        pass
+
+    def register_cli_command(self, **kwargs):
+        """Accept native CLI registration without modifying the host."""
+        pass
+
 
 class UpdateTests(unittest.TestCase):
     def setUp(self):

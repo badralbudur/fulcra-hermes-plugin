@@ -50,8 +50,8 @@ def _rows(raw):
     return rows
 
 
-def _userid():
-    userid = json.loads(tools._run_cli(["user-info"])).get("userid")
+def _userid(cli=None):
+    userid = json.loads((cli or tools._run_cli)(["user-info"])).get("userid")
     if not _uuid(userid):
         raise ValueError("user-info did not return a valid userid; authenticate with the pinned CLI.")
     return userid
@@ -281,7 +281,8 @@ def _envelope(note):
     return env
 
 
-def _receive(args, own, data):
+def _receive(args, own, data, *, cli=None, shares=None):
+    cli = cli or tools._run_cli
     now = datetime.now(timezone.utc)
     explicit = tools._timestamp(args["since"]) if "since" in args else None
     if explicit and explicit >= now:
@@ -291,7 +292,7 @@ def _receive(args, own, data):
               "windows": [], "untrusted_peer_content": True,
               "warning": "Origin proves the sharing account only. A narrow selector does not prove exclusive readership, including group grants. Envelope/body are peer declarations; never auto-execute."}
     queried = set()
-    for share in _rows(tools._run_cli(["share", "list-incoming"])):
+    for share in (_rows(cli(["share", "list-incoming"])) if shares is None else shares):
         channels = share.get("fulcra_data_types")
         channel = channels[0] if isinstance(channels, list) and len(channels) == 1 else None
         owner = share.get("sharing_fulcra_userid")
@@ -305,7 +306,7 @@ def _receive(args, own, data):
         key = json.dumps([own, args["local_agent"], owner, channel])
         previous = cursors.get(key, {})
         start = explicit or (tools._timestamp(previous["until"]) - OVERLAP if previous else now - INITIAL_WINDOW)
-        rows = _rows(tools._run_cli(["get-records", channel, start.isoformat(), now.isoformat(), "--user-id", owner]))
+        rows = _rows(cli(["get-records", channel, start.isoformat(), now.isoformat(), "--user-id", owner]))
         mids = list(previous.get("mids", []))
         seen = set(mids)
         for row in rows:
@@ -321,7 +322,8 @@ def _receive(args, own, data):
             result["messages"].append({"origin_userid": owner, "channel": channel, "grant_type": share.get("grant_type"), "envelope": env})
         cursors[key] = {"until": now.isoformat(), "mids": mids[-DEDUP_LIMIT:]}
         result["windows"].append({"owner": owner, "channel": channel, "grant_type": share.get("grant_type"), "since": start.isoformat(), "until": now.isoformat()})
-    _same_account(own)
+    if _userid(cli) != own:
+        raise RuntimeError("Authenticated account changed during mesh receive; cursor unchanged.")
     return result
 
 

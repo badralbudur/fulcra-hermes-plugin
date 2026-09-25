@@ -1,7 +1,7 @@
 """Fulcra Context plugin for Hermes Agent."""
 
 from pathlib import Path
-from . import mesh, tools, updates, workspace
+from . import mesh, mesh_updates, plugin_setup, tools, updates, workspace
 
 
 def register(ctx):
@@ -9,6 +9,8 @@ def register(ctx):
     for name, schema in tools.TOOL_SCHEMAS.items():
         ctx.register_tool(name=name, toolset="context", schema=schema, handler=getattr(tools, name))
 
+    plugin_setup.register(ctx)
+    mesh_updates.register(ctx)
     workspace.register(ctx)
     updates.register(ctx)
     ctx.register_tool(name="fulcra_mesh", toolset="context", schema=mesh.SCHEMA,
